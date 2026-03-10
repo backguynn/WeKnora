@@ -1,28 +1,28 @@
-# WeKnora 知识图谱
+# WeKnora 지식 그래프
 
-## 快速开始
+## 빠른 시작
 
-- .env 配置相关环境变量
-    - 启用 Neo4j: `NEO4J_ENABLE=true`
+- .env 관련 환경 변수 설정
+    - Neo4j 활성화: `NEO4J_ENABLE=true`
     - Neo4j URI: `NEO4J_URI=bolt://neo4j:7687`
-    - Neo4j 用户名: `NEO4J_USERNAME=neo4j`
-    - Neo4j 密码: `NEO4J_PASSWORD=password`
+    - Neo4j 사용자 이름: `NEO4J_USERNAME=neo4j`
+    - Neo4j 비밀번호: `NEO4J_PASSWORD=password`
 
-- 启动 Neo4j
+- Neo4j 시작
 ```bash
 docker-compose --profile neo4j up -d
 ```
 
-- 在知识库设置页面启用实体和关系提取，并根据提示配置相关内容
+- 지식베이스 설정 페이지에서 엔티티와 관계 추출을 활성화하고 안내에 따라 관련 내용을 설정합니다
 
-## 生成图谱
+## 그래프 생성
 
-上传任意文档后，系统会自动提取实体和关系，并生成对应的知识图谱。
+아무 문서를 업로드하면 시스템이 자동으로 엔티티와 관계를 추출해 해당 지식 그래프를 생성합니다.
 
-![知识图片示例](./images/graph3.png)
+![지식 이미지 예시](./images/graph3.png)
 
-## 查看图谱
+## 그래프 확인
 
-登陆 `http://localhost:7474`，执行 `match (n) return (n)` 即可查看生成的知识图谱。
+`http://localhost:7474`에 접속해 `match (n) return (n)`을 실행하면 생성된 지식 그래프를 확인할 수 있습니다.
 
-在对话时，系统会自动查询知识图谱，并获取相关知识。
+대화 중에는 시스템이 자동으로 지식 그래프를 조회해 관련 지식을 가져옵니다.

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-WeKnora MCP Server 便捷启动脚本
+WeKnora MCP Server 간편 실행 스크립트
 
-这是一个简化的启动脚本，提供最基本的功能。
-对于更多选项，请使用 main.py
+간단한 실행 스크립트로 기본 기능만 제공합니다.
+더 많은 옵션은 main.py를 사용하세요.
 """
 
 import os
@@ -12,34 +12,34 @@ from pathlib import Path
 
 
 def main():
-    """简单的启动函数"""
-    # 添加当前目录到 Python 路径
+    """간단한 실행 함수"""
+    # 현재 디렉터리를 Python 경로에 추가
     current_dir = Path(__file__).parent.absolute()
     if str(current_dir) not in sys.path:
         sys.path.insert(0, str(current_dir))
 
-    # 检查环境变量
+    # 환경 변수 확인
     base_url = os.getenv("WEKNORA_BASE_URL", "http://localhost:8080/api/v1")
     api_key = os.getenv("WEKNORA_API_KEY", "")
 
     print("WeKnora MCP Server")
     print(f"Base URL: {base_url}")
-    print(f"API Key: {'已设置' if api_key else '未设置'}")
+    print(f"API Key: {'설정됨' if api_key else '미설정'}")
     print("-" * 40)
 
     try:
-        # 导入并运行
+        # 임포트 후 실행
         from main import sync_main
 
         sync_main()
     except ImportError:
-        print("错误: 无法导入必要模块")
-        print("请确保运行: pip install -r requirements.txt")
+        print("오류: 필요한 모듈을 임포트할 수 없습니다")
+        print("다음 명령을 실행했는지 확인하세요: pip install -r requirements.txt")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n服务器已停止")
+        print("\n서버가 중지되었습니다")
     except Exception as e:
-        print(f"错误: {e}")
+        print(f"오류: {e}")
         sys.exit(1)
 
 

@@ -13,10 +13,10 @@
 </p>
 <p align="center">
     <a href="https://weknora.weixin.qq.com" target="_blank">
-        <img alt="官方网站" src="https://img.shields.io/badge/官方网站-WeKnora-4e6b99">
+        <img alt="공식 홈페이지" src="https://img.shields.io/badge/官方网站-WeKnora-4e6b99">
     </a>
     <a href="https://chatbot.weixin.qq.com" target="_blank">
-        <img alt="微信对话开放平台" src="https://img.shields.io/badge/微信对话开放平台-5ac725">
+        <img alt="WeChat 대화 오픈 플랫폼" src="https://img.shields.io/badge/微信对话开放平台-5ac725">
     </a>
     <a href="https://github.com/Tencent/WeKnora/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/License-MIT-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="License">
@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-| <b>English</b> | <a href="./README_CN.md"><b>简体中文</b></a> | <a href="./README_JA.md"><b>日本語</b></a> |
+| <b>English</b> | <a href="./README_CN.md"><b>간체 중국어</b></a> | <a href="./README_JA.md"><b>日本語</b></a> |
 </p>
 
 <p align="center">

@@ -1,135 +1,132 @@
-# Server configuration
+# 서버 설정
 server:
   port: 8080
   host: "0.0.0.0"
 
-# Conversation service configuration
+# 대화 서비스 설정
 conversation:
   max_rounds: 5
   keyword_threshold: 0.3
-  embedding_top_k: 30
-  vector_threshold: 0.2
-  rerank_threshold: 0.3
-  rerank_top_k: 30
+  embedding_top_k: 10
+  vector_threshold: 0.5
+  rerank_threshold: 0.5
+  rerank_top_k: 5
   fallback_strategy: "model"
-  fallback_response: "Sorry, I am unable to answer this question."
+  fallback_response: "죄송합니다. 이 질문에는 답변할 수 없습니다."
   fallback_prompt: |
-    You are a professional and friendly AI assistant. Please answer the user's question based on your knowledge.
+    당신은 전문적이고 친절한 AI 어시스턴트입니다. 보유한 지식을 바탕으로 사용자 질문에 직접 답하세요.
 
-    ## Response Requirements
-    - Answer the user's question directly
-    - Be concise, clear, and substantive
-    - If real-time data or personal privacy information is involved, honestly state that it cannot be obtained
-    - Use a polite and professional tone
-    - IMPORTANT: Always respond in the same language as the user's question
+    ## 답변 요구 사항
+    - 사용자 질문에 바로 답변
+    - 간결하고 명확하게, 핵심 있게
+    - 실시간 데이터나 개인정보 관련이면 접근 불가를 정직하게 알림
+    - 예의 바르고 전문적인 어조 사용
 
-    ## User's question:
+    ## 사용자 질문:
     {{query}}
   enable_rewrite: true
   enable_query_expansion: true
   enable_rerank: true
   rewrite_prompt_system: |
-    You are an intelligent assistant specialized in coreference resolution and ellipsis completion. Your task is to clearly identify pronouns in the user's question based on the conversation history and replace them with explicit subjects, while completing any omitted key information.
+    당신은 지시 대상 해소와 생략 보완에 집중하는 지능형 어시스턴트입니다. 대화 맥락을 바탕으로 사용자 질문의 대명사를 명확한 주어로 치환하고, 생략된 핵심 정보를 보완하세요.
 
-    ## Rewriting Goals
-    Based on the conversation history, rewrite the current user question with the following objectives:
-    - Perform coreference resolution: replace pronouns such as "it", "this", "that", "they", "them", etc. with explicit subjects
-    - Complete omitted key information to ensure the question is semantically complete
-    - Preserve the original meaning and expression style of the question
-    - The rewritten result must also be a question
-    - The rewritten question should be within 30 words
-    - Output ONLY the rewritten question without any explanation, and do NOT attempt to answer the question
-    - IMPORTANT: The rewritten question must be in the same language as the original question
+    ## 재작성 목표
+    대화 이력에 따라 현재 사용자 질문을 재작성하세요. 목표는 다음과 같습니다:
+    - 지시 대상 해소: "그것", "이것", "저것", "그", "그녀", "그것들", "그들", "그녀들" 같은 대명사를 명확한 주어로 대체
+    - 생략된 핵심 정보를 보완하여 질문 의미를 완전하게 만듦
+    - 질문의 원래 의미와 표현 방식을 유지
+    - 재작성 결과도 반드시 질문이어야 함
+    - 재작성된 질문은 30자 이내
+    - 재작성된 질문만 출력하고, 어떤 설명도 하지 말 것. 답변 시도도 하지 말 것(다른 어시스턴트가 답변함)
 
-    ## Few-shot Examples
+    ## Few-shot 예시
 
-    Example 1:
-    Conversation history:
-    User: What features does Slack have?
-    Assistant: Slack's main features include messaging, file sharing, channel organization, and integration with various tools.
+    예시1:
+    대화 이력:
+    사용자: 위챗페이에는 어떤 기능이 있나요?
+    어시스턴트: 위챗페이의 주요 기능에는 송금, 결제 코드, 수금, 신용카드 상환 등 다양한 결제 서비스가 포함됩니다.
 
-    User question: Is it secure?
-    Rewritten: Is Slack secure?
+    사용자 질문: 보안성은?
+    재작성: 위챗페이의 보안성
 
-    Example 2:
-    Conversation history:
-    User: My laptop battery drains too fast, what should I do?
-    Assistant: You can extend battery life by reducing screen brightness, closing background apps, and regularly updating your system.
+    예시2:
+    대화 이력:
+    사용자: 아이폰 배터리가 빨리 닳으면 어떻게 해야 하나요?
+    어시스턴트: 화면 밝기를 낮추고 백그라운드 앱을 끄며 정기적으로 시스템을 업데이트하면 배터리 수명을 늘릴 수 있습니다.
 
-    User question: Would that affect the user experience?
-    Rewritten: Would reducing screen brightness and closing background apps affect the user experience?
+    사용자 질문: 이렇게 하면 사용 경험에 영향이 있나요?
+    재작성: 화면 밝기를 낮추고 백그라운드 앱을 끄는 것이 사용 경험에 영향을 주나요?
 
-    Example 3:
-    Conversation history:
-    User: How do you make pasta carbonara?
-    Assistant: Pasta carbonara requires cooking spaghetti, then mixing it with a sauce made from eggs, cheese, and pancetta.
+    예시3:
+    대화 이력:
+    사용자: 홍샤오러우는 어떻게 만들어요?
+    어시스턴트: 홍샤오러우는 먼저 고기를 데친 뒤 간장과 설탕 등의 양념을 넣어 약불로 오래 조립니다.
 
-    User question: How long does it take?
-    Rewritten: How long does it take to make pasta carbonara?
+    사용자 질문: 얼마나 조려야 하나요?
+    재작성: 홍샤오러우는 얼마나 조려야 하나요?
 
-    Example 4:
-    Conversation history:
-    User: How much does a flight from New York to London cost?
-    Assistant: Flights from New York to London vary by airline and class. Economy tickets are around $400-800, and business class around $2000-5000.
+    예시4:
+    대화 이력:
+    사용자: 베이징에서 상하이까지 고속철 요금은 얼마인가요?
+    어시스턴트: 베이징-상하이 고속철 요금은 열차와 좌석 유형에 따라 달라지며, 2등석은 약 553위안, 1등석은 약 933위안입니다.
 
-    User question: What about the duration?
-    Rewritten: How long is the flight from New York to London?
+    사용자 질문: 시간은요?
+    재작성: 베이징에서 상하이까지 고속철 소요 시간은 얼마인가요?
 
-    Example 5:
-    Conversation history:
-    User: How do I create a GitHub account?
-    Assistant: To create a GitHub account, go to github.com, click "Sign up", enter your email, create a password, and choose a username.
+    예시5:
+    대화 이력:
+    사용자: 위챗 계정은 어떻게 등록하나요?
+    어시스턴트: 위챗 계정 등록은 위챗 앱을 다운로드한 뒤 휴대폰 번호를 입력하고 인증 코드를 받은 다음 닉네임과 비밀번호를 설정합니다.
 
-    User question: Can I use a company email?
-    Rewritten: Can I use a company email to create a GitHub account?
+    사용자 질문: 해외 번호도 되나요?
+    재작성: 해외 휴대폰 번호로 위챗 계정을 등록할 수 있나요?
   rewrite_prompt_user: |
-    ## Conversation History
+    ## 대화 이력 배경
     {{conversation}}
 
-    ## User Question to Rewrite
+    ## 재작성할 사용자 질문
     {{query}}
 
-    ## Rewritten Question
+    ## 재작성된 질문
   keywords_extraction_prompt: |
-    # Role
-    You are a professional keyword extraction assistant. Your task is to extract the most important keywords/phrases from the user's question.
+    # 역할
+    당신은 전문 키워드 추출 어시스턴트입니다. 사용자 질문에서 가장 중요한 키워드/구를 추출하세요.
 
-    # Requirements
-    - Summarize the user's question and provide the most important keywords/phrases, no more than 5
-    - Use commas as separators between keywords/phrases
-    - Keywords/phrases must come from the user's question, do not fabricate
-    - Do not output any explanation, output keywords/phrases directly without any prefix, explanation, or punctuation, and do not attempt to answer the question
-    - IMPORTANT: Extract keywords in the same language as the user's question
+    # 요구 사항
+    - 사용자 질문을 요약하고 가장 중요한 키워드/구를 최대 5개까지 제시
+    - 쉼표로 키워드/구를 구분
+    - 키워드/구는 사용자 질문에서만 가져오며, 추측하거나 만들어내지 말 것
+    - 어떤 설명도 출력하지 말고 키워드/구만 출력(접두어, 설명, 문장부호 금지). 답변 시도도 하지 말 것(다른 어시스턴트가 검색함)
 
-    # Output Format
+    # 출력 형식
     keyword1, keyword2, keyword3, keyword4, keyword5
 
     # Examples
 
     ## Example 1
-    USER: How can I improve my English speaking skills?
+    USER: 영어 회화 실력을 어떻게 높일 수 있나요?
     ###############
-    Output: English speaking, speaking skills, improve English speaking, English fluency, speaking practice
+    Output: 영어 회화, 회화 실력, 영어 회화 향상, 영어 회화 실전, 영어 회화 연습
 
     ## Example 2
-    USER: What are some fun exhibitions in New York recently?
+    USER: 요즘 상하이에서 볼만한 전시나 행사가 있나요?
     ###############
-    Output: New York exhibitions, exhibition events, New York art shows, exhibition recommendations, New York events
+    Output: 상하이 전시, 전시 행사, 상하이 전시 추천, 전시 행사 추천, 상하이 행사
 
     ## Example 3
-    USER: How to fix iPhone battery draining fast?
+    USER: 아이폰 배터리가 빨리 닳을 때 해결 방법은?
     ###############
-    Output: iPhone, battery drain, battery optimization, battery life, battery health
+    Output: 아이폰, 배터리 소모, 배터리 최적화, 배터리 수명, 배터리 관리
 
     ## Example 4
-    USER: What does the Python logo look like?
+    USER: Python 로고는 어떻게 생겼나요?
     ###############
-    Output: Python logo
+    Output: Python Logo
 
     ## Example 5
-    USER: How to connect an iPhone to WiFi?
+    USER: iPhone에서 WiFi를 어떻게 연결하나요?
     ###############
-    Output: iPhone, connect WiFi, iPhone WiFi setup
+    Output: iPhone, WiFi 연결, iPhone WiFi 연결
 
     # Real Data
     USER: {{query}}
@@ -138,44 +135,37 @@ conversation:
     Output:
 
   generate_summary_prompt: |
-    You are a precise document summarization expert. Your task is to extract and summarize the core content of the article or excerpt provided by the user.
+    당신은 정확한 문서 요약 전문가입니다. 사용자가 제공한 문서 또는 발췌문의 핵심 내용을 추출해 요약하세요.
 
-    ## Core Requirements
-    - Summary length should be 50-100 words, adjusted flexibly based on content complexity
-    - Generate the summary entirely based on the provided content, without adding any information not present in the article
-    - Ensure the summary captures key information points and main conclusions
-    - Even for complex or specialized content, you must attempt to extract core points for summarization
-    - Output the summary directly, without any preamble, prefix, or explanation
+    ## 핵심 요구 사항
+    - 요약 길이는 50~100자 내외로, 내용 복잡도에 따라 유연하게 조정
+    - 제공된 문서 내용만을 기반으로 요약하며, 문서에 없는 정보는 추가하지 말 것
+    - 요약에 핵심 정보와 주요 결론이 포함되도록 할 것
+    - 내용이 복잡하거나 전문적이어도 핵심 요점을 최대한 추출해 요약할 것
+    - 요약 결과만 직접 출력하고 어떤 서두나 설명도 포함하지 말 것
 
-    ## Format and Style
-    - Use an objective, neutral third-person narrative tone
-    - Maintain logical coherence with smooth transitions between sentences
-    - Avoid repetitive use of the same expressions or sentence structures
+    ## 형식 및 스타일
+    - 객관적이고 중립적인 3인칭 서술체 사용
+    - 명확하고 간결한 한국어 표현 사용
+    - 문장 간 논리적 연결성을 유지
+    - 같은 표현이나 문장 구조의 반복을 피할 것
 
-    ## Important Notes
-    - NEVER output refusal phrases such as "unable to generate", "unable to summarize", or "insufficient content"
-    - Do not copy or reference any content from examples; ensure the summary is entirely based on the user's new article
-    - Make every effort to extract key points and summarize for any text, regardless of length or complexity
-
-    ## CRITICAL: Language Rule
-    - Write the summary in the SAME LANGUAGE as the original document
-    - If the document is in Korean, write the summary in Korean
-    - If the document is in English, write the summary in English
-    - If the document is in Chinese, write the summary in Chinese
-    - NEVER translate the content to a different language
-
-    ## The following is the article information provided by the user:
+    ## 주의 사항
+    - "생성할 수 없음", "요약 불가", "내용 부족" 같은 거절 문구는 절대 출력하지 말 것
+    - 예시 내용을 베끼거나 참고하지 말고, 반드시 새로운 문서에 기반해 요약할 것
+    - 텍스트 길이나 난이도와 무관하게 최대한 핵심을 추출해 요약할 것
+    
+    ## 아래는 사용자가 제공한 문서 관련 정보입니다:
 
   generate_session_title_prompt: |
-    Generate a short session title based on the user's question.
+    사용자 질문을 바탕으로 짧은 세션 제목을 생성하세요.
 
-    Requirements:
-    - 3-8 words
-    - Extract the core topic
-    - Output only the title, no explanation needed
-    - IMPORTANT: Use the same language as the user's question
+    요구 사항:
+    - 5~10자
+    - 핵심 주제 추출
+    - 제목만 출력하고 설명은 하지 말 것
 
-    User question:
+    사용자 질문:
   summary:
     repeat_penalty: 1.0
     temperature: 0.3
@@ -185,285 +175,335 @@ conversation:
       </think>
       NO_MATCH
     prompt: |
-      You are a professional intelligent information retrieval assistant named WeKnora. Like a professional senior secretary, you answer user questions based on retrieved information and must not use any prior knowledge.
-      When a user asks a question, you provide answers based on specific retrieved information. You first think through the reasoning process internally, then provide the answer to the user.
+      당신은 WeKnora라는 전문 지능형 정보 검색 어시스턴트입니다. 고급 비서처럼 검색된 정보에 기반해 사용자 질문에 답하며, 어떤 선행 지식도 사용하지 마세요.
+      사용자가 질문하면, 어시스턴트는 특정 정보에 기반해 답변합니다. 먼저 내부적으로 추론 과정을 거친 뒤 사용자에게 답합니다.
+      ## 답변 규칙
+      - 검색된 정보의 사실만을 바탕으로 답변하고, 선행 지식을 사용하지 마세요. 객관성과 정확성을 유지합니다.
+      - 복잡한 질문/답변은 Markdown 구조로 분리해 제시하되, 총괄 설명은 분리하지 않습니다.
+      - 간단한 답변은 과도하게 세분화하지 않습니다.
+      - 결과에 사용하는 이미지 주소는 반드시 검색된 정보에서 가져와야 하며, 허위로 만들지 않습니다.
+      - 결과의 텍스트와 이미지가 검색된 정보에서 왔는지 확인하고, 검색 정보에 없는 내용으로 확장했다면 수정해 최종 답을 만듭니다.
+      - 사용자 질문에 답할 수 없으면 사실대로 알리고 합리적인 제안을 제공합니다.
 
-      ## Response Rules
-      - Reply ONLY based on facts from the retrieved information, without using any prior knowledge, maintaining objectivity and accuracy
-      - For complex questions, structure the answer using Markdown formatting; simple summaries do not need to be split
-      - For simple answers, do not break the final answer into overly granular parts
-      - Image URLs used in results must come from the retrieved information and must not be fabricated
-      - Verify that all text and images in the result come from the retrieved information; if content not found in the retrieved information has been added, it must be revised until the final answer is obtained
-      - If the user's question cannot be answered, honestly inform the user and provide reasonable suggestions
-
-      ## Output Format
-      - Output your final result in Markdown format with images when applicable
-      - Ensure the output is concise yet comprehensive, well-organized, clear, and non-repetitive
-
-      ## CRITICAL: Language Rule
-      - ALWAYS respond in the same language as the user's question
-      - If the user asks in Korean, respond in Korean
-      - If the user asks in English, respond in English
-      - If the user asks in Chinese, respond in Chinese
+      ## 출력 제한
+      - Markdown 형식(텍스트+이미지)으로 최종 결과를 출력
+      - 출력 내용은 짧고도 충분히 포괄적이어야 하며, 구조가 명확하고 중복이 없어야 합니다.
 
     context_template: "{{query}}"
   extract_entities_prompt: |
-    ## Task
-    Extract all entities from the user-provided text that match the following entity types:
+    ## 작업
+    사용자 제공 텍스트에서 아래 엔티티 유형에 해당하는 모든 엔티티를 추출하세요:
     EntityTypes: [Person, Organization, Location, Product, Event, Date, Work, Concept, Resource, Category, Operation]
 
-    ## Requirements
-    1. Output must be in JSON array format
-    2. Each entity must contain title and type fields; the description field is optional but strongly recommended
-    3. The type field value must be strictly selected from the EntityTypes list; do not create new types
-    4. If the entity type cannot be determined, do not force a classification; it is better to skip that entity
-    5. Do not output any explanation or additional content; output only the JSON array
-    6. All field values must not contain HTML tags or other code
-    7. If an entity is ambiguous, specify the reference in the description
-    8. If no entities are found, return an empty array []
+    ## 요구 사항
+    1. 결과는 반드시 JSON 배열 형식으로 출력
+    2. 각 엔티티는 title과 type 필드를 반드시 포함, description은 선택이지만 강력히 권장
+    3. type 값은 EntityTypes 목록에서만 선택하고 새 유형 생성 금지
+    4. 엔티티 유형을 확정할 수 없으면 무리하게 분류하지 말고 추출하지 말 것
+    5. 어떤 설명이나 부가 내용 없이 JSON 배열만 출력
+    6. 모든 필드 값에 HTML 태그나 코드 포함 금지
+    7. 엔티티에 모호성이 있으면 description에 구체적 지시 대상을 명시
+    8. 엔티티가 없으면 빈 배열 [] 반환
 
-    ## Entity Extraction Rules
-    - Person: Real or fictional characters, including historical figures, modern figures, literary characters, etc.
-    - Organization: Companies, government agencies, teams, schools, and other organizational entities
-    - Location: Geographic locations, landmarks, countries, cities, etc.
-    - Product: Goods, services, brands, and other commercial products
-    - Event: Events, conferences, festivals, historical events, etc.
-    - Date: Dates, time periods, eras, and other time-related information
-    - Work: Books, movies, music, artworks, and other creative works
-    - Concept: Abstract concepts, ideas, theories, etc.
-    - Resource: Natural resources, information resources, tools, etc.
-    - Category: Classifications, categories, fields, etc.
-    - Operation: Operations, actions, methods, processes, etc.
+    ## 엔티티 추출 규칙
+    - Person: 실제 또는 가상의 인물(역사 인물, 현대 인물, 문학 인물 등)
+    - Organization: 회사, 정부 기관, 팀, 학교 등 조직
+    - Location: 지리적 위치, 랜드마크, 국가, 도시 등
+    - Product: 상품, 서비스, 브랜드 등 상업적 제품
+    - Event: 사건, 회의, 축제, 역사적 사건 등
+    - Date: 날짜, 기간, 시대 등 시간 관련 정보
+    - Work: 책, 영화, 음악, 예술 작품 등 창작물
+    - Concept: 추상 개념, 사상, 이론 등
+    - Resource: 자연 자원, 정보 자원, 도구 등
+    - Category: 분류, 범주, 분야 등
+    - Operation: 조작, 동작, 방법, 과정 등
 
-    ## Extraction Steps
-    1. Carefully read the text and identify potential entities
-    2. For each identified entity, determine the most appropriate entity type (must be selected from EntityTypes)
-    3. Create a JSON object for each entity with the following fields:
-       - title: The standard name of the entity, without modifiers such as quotation marks
-       - type: The entity type selected from EntityTypes
-       - description: A brief description of the entity, based on the text content, in the same language as the source text
-    4. Verify that all fields of each entity are correct and properly formatted
-    5. Merge all entity objects into a single JSON array
-    6. Check that the final JSON is valid and meets requirements
+    ## 추출 단계
+    1. 텍스트를 꼼꼼히 읽고 가능한 엔티티를 식별
+    2. 각 엔티티의 가장 적합한 유형을 결정(EntityTypes에서 선택)
+    3. 각 엔티티에 대해 다음 필드를 포함한 JSON 객체 생성:
+       - title: 엔티티의 표준 명칭(수식어, 따옴표 등 제외)
+       - type: EntityTypes에서 선택한 엔티티 유형
+       - description: 텍스트 내용에 기반한 간결한 한국어 설명
+    4. 각 엔티티 필드가 올바르고 형식화되어 있는지 검증
+    5. 모든 엔티티 객체를 하나의 JSON 배열로 합침
+    6. 최종 JSON이 유효하고 요구 사항에 맞는지 확인
 
-    ## CRITICAL: Language Rule
-    - Extract entity titles exactly as they appear in the source text
-    - Write descriptions in the same language as the source document
+    ## 예시
+    [입력]
+    텍스트: 《홍루몽》은 《석두기》라는 이름으로도 알려져 있으며, 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불립니다. 이 책의 전 80회는 조설근이 썼고, 후 40회는 일반적으로 고악이 이어 쓴 것으로 여겨집니다. 소설은 가씨, 사씨, 왕씨, 설씨 네 가문의 흥망을 배경으로 가보옥, 임대옥, 설보채의 사랑 비극을 중심 줄거리로 삼아 가보옥과 금릉십이채를 중심으로 한 정사 양부, 현우 병출의 복잡한 인물 군상을 묘사합니다. 건륭 연간(1743년 전후)에 완성되었으며, 중국 문학사에서 현실주의의 정점으로 평가되어 후대에 큰 영향을 미쳤습니다.
 
-    ## Example
-    [Input]
-    Text: "Romeo and Juliet" is a tragedy written by William Shakespeare early in his career about the romance between two Italian youths from feuding families. It was among Shakespeare's most popular plays during his lifetime and is one of his most frequently performed plays. The play is set in Verona, Italy. The two main characters, Romeo Montague and Juliet Capulet, fall deeply in love despite their families' bitter rivalry.
-
-    [Output]
+    [출력]
     [
       {
-        "title": "Romeo and Juliet",
+        "title": "홍루몽",
         "type": "Work",
-        "description": "A tragedy written by William Shakespeare about the romance between two youths from feuding families"
+        "description": "홍루몽은 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불린다"
       },
       {
-        "title": "William Shakespeare",
+        "title": "석두기",
+        "type": "Work",
+        "description": "석두기는 홍루몽의 다른 이름이다"
+      },
+      {
+        "title": "조설근",
         "type": "Person",
-        "description": "The author of Romeo and Juliet, who wrote the play early in his career"
+        "description": "조설근은 청나라 작가로 홍루몽의 저자이며 전 80회를 썼다"
       },
       {
-        "title": "Romeo Montague",
+        "title": "고악",
         "type": "Person",
-        "description": "One of the two main characters in Romeo and Juliet, from the Montague family"
+        "description": "고악은 홍루몽 후 40회의 이어 쓴 저자로 여겨진다"
       },
       {
-        "title": "Juliet Capulet",
+        "title": "가보옥",
         "type": "Person",
-        "description": "One of the two main characters in Romeo and Juliet, from the Capulet family"
+        "description": "가보옥은 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Verona",
-        "type": "Location",
-        "description": "The Italian city where Romeo and Juliet is set"
+        "title": "임대옥",
+        "type": "Person",
+        "description": "임대옥은 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Montague",
-        "type": "Organization",
-        "description": "One of the two feuding families in the play, Romeo's family"
+        "title": "설보채",
+        "type": "Person",
+        "description": "설보채는 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Capulet",
-        "type": "Organization",
-        "description": "One of the two feuding families in the play, Juliet's family"
+        "title": "금릉십이채",
+        "type": "Concept",
+        "description": "금릉십이채는 홍루몽에서 가보옥을 중심으로 한 열두 명의 주요 여성 인물이다"
+      },
+      {
+        "title": "건륭 연간",
+        "type": "Date",
+        "description": "건륭 연간은 홍루몽이 완성된 시기로, 약 1743년 전후를 의미한다"
+      },
+      {
+        "title": "사대가문",
+        "type": "Concept",
+        "description": "사대가문은 홍루몽의 가씨, 사씨, 왕씨, 설씨 네 가문으로 소설의 배경이다"
+      },
+      {
+        "title": "중국 문학사",
+        "type": "Category",
+        "description": "홍루몽은 중국 문학사에서 현실주의의 정점으로 평가된다"
       }
     ]
 
   extract_relationships_prompt: |
-    ## Task
-    From the user-provided entity array, extract explicit relationships between entities to form a structured relationship network.
+    ## 작업
+    사용자가 제공한 엔티티 배열에서 엔티티 간의 명확한 관계를 추출해 구조화된 관계 네트워크를 구성하세요.
 
-    ## Requirements
-    1. Relationship extraction must be based on the provided text content; do not fabricate non-existent relationships
-    2. Output must be in JSON array format, with each relationship as an object in the array
-    3. Each relationship object must contain source, target, description, and strength fields
-    4. Do not output any explanation or additional content; output only the JSON array
-    5. If no relationships are found, return an empty array []
+    ## 요구 사항
+    1. 관계 추출은 제공된 텍스트 내용에만 기반해야 하며, 없는 관계를 추측하지 말 것
+    2. 결과는 JSON 배열 형식으로 출력하고, 각 관계는 배열의 객체 하나로 표현
+    3. 각 관계 객체는 source, target, description, strength 필드를 반드시 포함
+    4. 어떤 설명이나 부가 내용 없이 JSON 배열만 출력
+    5. 관계가 없으면 빈 배열 [] 반환
 
-    ## Relationship Extraction Rules
-    - Only relationships explicitly present in the text should be extracted
-    - Source entity and target entity must be entities already in the entity array
-    - Relationship description should concisely explain the specific relationship between the two entities
-    - Relationship strength should be determined based on the following criteria:
-      * 10: Direct creation/subordination relationship (e.g., author and work, inventor and invention, parent company and subsidiary)
-      * 9: Different manifestations of the same entity (e.g., alias, former name)
-      * 8: Closely related and mutually influential relationships (e.g., close partners, family members)
-      * 7: Clear but indirect relationships (e.g., characters in a work, members of an organization)
-      * 6: Indirect association with clear connection (e.g., colleague relationship, similar products)
-      * 5: Related but loosely connected (e.g., different concepts in the same field)
+    ## 관계 추출 규칙
+    - 텍스트에 명확히 드러난 관계만 추출
+    - source와 target은 반드시 엔티티 배열에 이미 존재하는 엔티티여야 함
+    - description은 두 엔티티 간 관계를 간결하고 정확하게 설명
+    - strength는 아래 기준에 따라 결정:
+      * 10점: 직접 창작/소속 관계(예: 저자와 작품, 발명자와 발명, 모회사와 자회사)
+      * 9점: 동일 엔티티의 다른 표현(예: 별명, 이전 명칭)
+      * 8점: 매우 밀접하고 상호 영향이 큰 관계(예: 긴밀한 협력 파트너, 가족 구성원)
+      * 7점: 명확하지만 직접 관계는 아닌 경우(예: 작품 속 인물, 조직의 구성원)
+      * 6점: 간접적이지만 명확한 연관 관계(예: 동료 관계, 유사 제품)
+      * 5점: 연관은 있으나 느슨한 관계(예: 동일 분야의 다른 개념)
 
-    ## Extraction Steps
-    1. Carefully analyze the text content to determine which entities have explicit relationships
-    2. Only consider relationships explicitly mentioned in the text; do not fabricate
-    3. For each relationship found, determine:
-       - source: The title of the source entity (must be an entity already in the entity list)
-       - target: The title of the target entity (must be an entity already in the entity list)
-       - description: A concise and accurate relationship description, in the same language as the source text
-       - strength: Relationship strength based on the above criteria (integer between 5-10)
-    4. Check whether each relationship is bidirectional:
-       - If the relationship is bidirectional (e.g., "A is B's friend" implies "B is also A's friend"), consider whether a reverse relationship should be created
-       - If the relationship is unidirectional (e.g., "A created B"), keep only the unidirectional relationship
-    5. Verify the consistency and reasonableness of all relationships:
-       - Ensure there are no contradictory relationships (e.g., A is simultaneously B's father and brother)
-       - Ensure relationship descriptions match relationship strengths
-    6. Organize all valid relationships into a JSON array
+    ## 추출 단계
+    1. 텍스트를 면밀히 분석해 명확한 관계가 있는 엔티티 쌍을 확인
+    2. 텍스트에 명시된 관계만 고려하고 추측 금지
+    3. 각 관계에 대해 다음을 결정:
+       - source: 관계의 출발 엔티티 제목(엔티티 목록에 존재해야 함)
+       - target: 관계의 대상 엔티티 제목(엔티티 목록에 존재해야 함)
+       - description: 간결하고 정확한 관계 설명(한국어)
+       - strength: 위 기준에 따른 관계 강도(5~10 정수)
+    4. 각 관계의 방향성 확인:
+       - 양방향 관계(예: "A는 B의 친구"는 "B도 A의 친구")는 역관계 생성 여부 검토
+       - 단방향 관계(예: "A가 B를 창작")는 단방향만 유지
+    5. 관계의 일관성과 합리성 검증:
+       - 모순되는 관계가 없는지 확인(예: A가 동시에 B의 아버지와 형제)
+       - 관계 설명과 strength가 일치하는지 확인
+    6. 유효한 관계를 JSON 배열로 구성
 
-    ## CRITICAL: Language Rule
-    - Write relationship descriptions in the same language as the source document
-
-    ## Example
-    [Input]
-    Entities: [
+    ## 예시
+    [입력]
+    엔티티: [
       {
-        "title": "Romeo and Juliet",
+        "title": "홍루몽",
         "type": "Work",
-        "description": "A tragedy written by William Shakespeare about the romance between two youths from feuding families"
+        "description": "홍루몽은 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불린다"
       },
       {
-        "title": "William Shakespeare",
+        "title": "석두기",
+        "type": "Work",
+        "description": "석두기는 홍루몽의 다른 이름이다"
+      },
+      {
+        "title": "조설근",
         "type": "Person",
-        "description": "The author of Romeo and Juliet, who wrote the play early in his career"
+        "description": "조설근은 청나라 작가로 홍루몽의 저자이며 전 80회를 썼다"
       },
       {
-        "title": "Romeo Montague",
+        "title": "고악",
         "type": "Person",
-        "description": "One of the two main characters in Romeo and Juliet, from the Montague family"
+        "description": "고악은 홍루몽 후 40회의 이어 쓴 저자로 여겨진다"
       },
       {
-        "title": "Juliet Capulet",
+        "title": "가보옥",
         "type": "Person",
-        "description": "One of the two main characters in Romeo and Juliet, from the Capulet family"
+        "description": "가보옥은 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Verona",
-        "type": "Location",
-        "description": "The Italian city where Romeo and Juliet is set"
+        "title": "임대옥",
+        "type": "Person",
+        "description": "임대옥은 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Montague",
-        "type": "Organization",
-        "description": "One of the two feuding families in the play, Romeo's family"
+        "title": "설보채",
+        "type": "Person",
+        "description": "설보채는 홍루몽의 주요 등장인물로, 사랑 비극의 주인공 중 한 명이다"
       },
       {
-        "title": "Capulet",
-        "type": "Organization",
-        "description": "One of the two feuding families in the play, Juliet's family"
+        "title": "사대가문",
+        "type": "Concept",
+        "description": "사대가문은 홍루몽의 가씨, 사씨, 왕씨, 설씨 네 가문으로 소설의 배경이다"
+      },
+      {
+        "title": "금릉십이채",
+        "type": "Concept",
+        "description": "금릉십이채는 홍루몽에서 가보옥을 중심으로 한 열두 명의 주요 여성 인물이다"
+      },
+      {
+        "title": "건륭 연간",
+        "type": "Date",
+        "description": "건륭 연간은 홍루몽이 완성된 시기로, 약 1743년 전후를 의미한다"
+      },
+      {
+        "title": "중국 문학사",
+        "type": "Category",
+        "description": "홍루몽은 중국 문학사에서 현실주의의 정점으로 평가된다"
       }
     ]
 
-    Text: "Romeo and Juliet" is a tragedy written by William Shakespeare early in his career about the romance between two Italian youths from feuding families. It was among Shakespeare's most popular plays during his lifetime and is one of his most frequently performed plays. The play is set in Verona, Italy. The two main characters, Romeo Montague and Juliet Capulet, fall deeply in love despite their families' bitter rivalry.
+    텍스트: 《홍루몽》은 《석두기》라는 이름으로도 알려져 있으며, 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불립니다. 이 책의 전 80회는 조설근이 썼고, 후 40회는 일반적으로 고악이 이어 쓴 것으로 여겨집니다. 소설은 가씨, 사씨, 왕씨, 설씨 네 가문의 흥망을 배경으로 가보옥, 임대옥, 설보채의 사랑 비극을 중심 줄거리로 삼아 가보옥과 금릉십이채를 중심으로 한 정사 양부, 현우 병출의 복잡한 인물 군상을 묘사합니다. 건륭 연간(1743년 전후)에 완성되었으며, 중국 문학사에서 현실주의의 정점으로 평가되어 후대에 큰 영향을 미쳤습니다.
 
-    [Output]
+    [출력]
     [
       {
-        "source": "William Shakespeare",
-        "target": "Romeo and Juliet",
-        "description": "William Shakespeare is the author of Romeo and Juliet",
+        "source": "조설근",
+        "target": "홍루몽",
+        "description": "조설근은 홍루몽의 주요 저자이며 전 80회를 집필했다",
         "strength": 10
       },
       {
-        "source": "Romeo Montague",
-        "target": "Juliet Capulet",
-        "description": "Romeo and Juliet fall deeply in love despite their families' rivalry",
-        "strength": 8
+        "source": "고악",
+        "target": "홍루몽",
+        "description": "고악은 홍루몽 후 40회의 이어 쓴 저자로 여겨진다",
+        "strength": 10
       },
       {
-        "source": "Romeo Montague",
-        "target": "Montague",
-        "description": "Romeo is a member of the Montague family",
-        "strength": 8
+        "source": "홍루몽",
+        "target": "석두기",
+        "description": "석두기는 홍루몽의 별칭이다",
+        "strength": 9
       },
       {
-        "source": "Juliet Capulet",
-        "target": "Capulet",
-        "description": "Juliet is a member of the Capulet family",
-        "strength": 8
-      },
-      {
-        "source": "Romeo and Juliet",
-        "target": "Romeo Montague",
-        "description": "Romeo Montague is one of the main characters in the play",
+        "source": "홍루몽",
+        "target": "중국 문학사",
+        "description": "홍루몽은 중국 문학사에서 현실주의의 정점으로 평가된다",
         "strength": 7
       },
       {
-        "source": "Romeo and Juliet",
-        "target": "Juliet Capulet",
-        "description": "Juliet Capulet is one of the main characters in the play",
+        "source": "가보옥",
+        "target": "임대옥",
+        "description": "가보옥과 임대옥은 깊은 사랑 관계를 가지며 소설의 주요 줄거리 중 하나다",
+        "strength": 8
+      },
+      {
+        "source": "가보옥",
+        "target": "설보채",
+        "description": "가보옥과 설보채의 관계는 소설 사랑 비극의 한 축이다",
+        "strength": 8
+      },
+      {
+        "source": "가보옥",
+        "target": "금릉십이채",
+        "description": "가보옥은 금릉십이채 이야기의 중심 인물이다",
+        "strength": 8
+      },
+      {
+        "source": "홍루몽",
+        "target": "가보옥",
+        "description": "가보옥은 홍루몽의 주요 등장인물이다",
         "strength": 7
       },
       {
-        "source": "Romeo and Juliet",
-        "target": "Verona",
-        "description": "The play is set in Verona, Italy",
+        "source": "홍루몽",
+        "target": "임대옥",
+        "description": "임대옥은 홍루몽의 주요 등장인물이다",
+        "strength": 7
+      },
+      {
+        "source": "홍루몽",
+        "target": "설보채",
+        "description": "설보채는 홍루몽의 주요 등장인물이다",
+        "strength": 7
+      },
+      {
+        "source": "홍루몽",
+        "target": "사대가문",
+        "description": "사대가문은 홍루몽의 배경 설정이다",
+        "strength": 7
+      },
+      {
+        "source": "홍루몽",
+        "target": "금릉십이채",
+        "description": "금릉십이채는 홍루몽의 중요한 개념이다",
+        "strength": 7
+      },
+      {
+        "source": "홍루몽",
+        "target": "건륭 연간",
+        "description": "홍루몽은 건륭 연간(약 1743년 전후)에 완성되었다",
         "strength": 6
-      },
-      {
-        "source": "Montague",
-        "target": "Capulet",
-        "description": "The Montague and Capulet families have a bitter rivalry",
-        "strength": 8
       }
     ]
 
   generate_questions_prompt: |
-    You are a professional question generation assistant. Your task is to generate related questions that users might ask based on the given [Main Content].
+    당신은 전문 질문 생성 어시스턴트입니다. 주어진 【주요 내용】을 기반으로 사용자가 할 법한 관련 질문을 생성하세요.
 
     {{context}}
-    ## Main Content (generate questions based on this content)
-    Document name: {{doc_name}}
-    Document content:
+    ## 주요 내용(이 내용을 바탕으로 질문 생성)
+    문서 이름: {{doc_name}}
+    문서 내용:
     {{content}}
 
-    ## Core Requirements
-    - Generated questions must be directly related to the [Main Content]
-    - Questions must NOT use any pronouns or referential words (such as "it", "this", "that document", "this article", "the text", "its", etc.); use specific names instead
-    - Questions must be complete and self-contained, understandable without additional context
-    - Questions should be natural questions that users would likely ask in real scenarios
-    - Questions should be diverse, covering different aspects of the content
-    - Each question should be concise and clear, within 30 words
-    - Generate {{question_count}} questions
+    ## 핵심 요구 사항
+    - 생성된 질문은 반드시 【주요 내용】과 직접 관련되어야 함
+    - 질문에 어떤 대명사나 지시어("그것", "이것", "해당 문서", "본문", "문중", "그" 등)도 사용하지 말고 구체 명칭으로 대체
+    - 질문은 맥락 없이도 이해 가능한 완전한 문장이어야 함
+    - 실제 상황에서 사용자가 물어볼 법한 자연스러운 질문이어야 함
+    - 질문은 다양해야 하며, 내용의 여러 측면을 포함해야 함
+    - 각 질문은 간결하고 명확하며 30자 이내
+    - 질문 개수는 {{question_count}}개
 
-    ## Suggested Question Types
-    - Definition: What is...? What does... mean?
-    - Reason: Why...? What is the reason for...?
-    - Method: How to...? What is the way to...?
-    - Comparison: What is the difference between... and...?
-    - Application: What scenarios can... be used for?
+    ## 질문 유형 제안
+    - 정의형: ...이란? ...는 무엇인가?
+    - 이유형: 왜 ...인가? ...의 이유는?
+    - 방법형: 어떻게 ...하나? ...하는 방법은?
+    - 비교형: ...와 ...의 차이는?
+    - 적용형: ...은 어떤 상황에 쓸 수 있나?
 
-    ## Output Format
-    Output the question list directly, one question per line, without numbering or other prefixes.
+    ## 출력 형식
+    질문 목록을 바로 출력하고, 한 줄에 하나의 질문만 출력(번호나 접두어 금지).
 
-    ## CRITICAL: Language Rule
-    - Generate questions in the SAME LANGUAGE as the source document
-    - If the document is in Korean, generate questions in Korean
-    - If the document is in English, generate questions in English
-    - If the document is in Chinese, generate questions in Chinese
-
-# Knowledge base configuration
+# 지식 베이스 설정
 knowledge_base:
   chunk_size: 512
   chunk_overlap: 50
@@ -474,65 +514,71 @@ knowledge_base:
 extract:
   extract_graph:
     description: |
-      Based on the given text, complete the information extraction task following these steps, ensuring clear logic and complete, accurate information:
+      제공된 텍스트를 바탕으로 아래 단계에 따라 정보 추출을 수행하고, 논리적으로 명확하며 정확한 정보를 보장하세요:
 
-      ## Step 1: Entity Extraction and Attribute Enrichment
-      1. **Extract core entities**: Read through the text and extract all core entities relevant to the task in logical order (such as narrative order or entity association closeness).
-      2. **Enrich entity attributes**: For each extracted entity, comprehensively supplement its detailed attributes explicitly mentioned in the text, ensuring no key attributes are omitted.
+      ## 1. 엔티티 추출 및 속성 보완
+      1. **핵심 엔티티 추출**: 텍스트를 읽고 논리적 순서(예: 서술 순서, 엔티티 연관성)로 관련 핵심 엔티티를 모두 추출합니다.
+      2. **엔티티 상세 속성 보완**: 각 엔티티에 대해 텍스트에 명시된 상세 속성을 빠짐없이 보완합니다.
 
-      ## Step 2: Relationship Extraction and Verification
-      1. **Identify relationship types**: Select corresponding types only from the specified relationship list. Allowed relationship types are: %s.
-      2. **Extract valid relationships**: Based on the extracted entities and attributes, identify relationships that genuinely exist in the text, ensuring relationships are factually accurate with no false associations.
-      3. **Clarify relationship subjects**: For each extracted relationship, clearly annotate the two associated entities to avoid subject confusion.
-      4. **Supplement related attributes**: If the text contains supplementary information directly related to a relationship, include it as a related attribute of the relationship.
+      ## 2. 관계 추출 및 검증
+      1. **관계 유형 명확화**: 지정된 관계 목록에서만 유형을 선택하며, 관계 유형은 %s로 제한합니다.
+      2. **유효 관계 추출**: 추출된 엔티티와 속성에 기반해 텍스트에 실제 존재하는 관계만 식별하고 허위 연관을 배제합니다.
+      3. **관계 주체 명확화**: 각 관계의 두 주체를 분명히 표기해 혼동을 방지합니다.
+      4. **관계 속성 보완**: 텍스트에 관계와 직접 관련된 보충 정보가 있으면 관계의 속성으로 추가해 완성도를 높입니다.
     tags:
-      - "Author"
-      - "Alias"
+      - "저자"
+      - "별칭"
     examples:
       - text: |
-          "Romeo and Juliet" is a tragedy written by William Shakespeare early in his career about the romance between two Italian youths from feuding families.
-          It was among Shakespeare's most popular plays during his lifetime. The play is also known by its alternative title "The Most Excellent and Lamentable Tragedy of Romeo and Juliet".
-          The story follows Romeo of the Montague family and Juliet of the Capulet family, whose forbidden love ends in tragedy.
+          《홍루몽》은 《석두기》라는 이름으로도 알려져 있으며, 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불립니다. 이 책의 전 80회는 조설근이 썼고, 후 40회는 일반적으로 고악이 이어 쓴 것으로 여겨집니다.
+          소설은 가씨, 사씨, 왕씨, 설씨 네 가문의 흥망을 배경으로 가보옥, 임대옥, 설보채의 사랑 비극을 중심 줄거리로 삼아 가보옥과 금릉십이채를 중심으로 한 정사 양부, 현우 병출의 복잡한 인물 군상을 묘사합니다.
+          건륭 연간(1743년 전후)에 완성되었으며, 중국 문학사에서 현실주의의 정점으로 평가되어 후대에 큰 영향을 미쳤습니다.
         node:
-          - name: "Romeo and Juliet"
+          - name: "홍루몽"
             attributes:
-              - "A tragedy by William Shakespeare"
-              - "Also known as 'The Most Excellent and Lamentable Tragedy of Romeo and Juliet'"
-              - "Among Shakespeare's most popular plays"
-          - name: "The Most Excellent and Lamentable Tragedy of Romeo and Juliet"
+              - "중국 고전 4대 명작 중 하나"
+              - "《석두기》로도 불림"
+              - "중국 봉건 사회의 백과사전으로 불림"
+          - name: "석두기"
             attributes:
-              - "Alternative title for Romeo and Juliet"
-          - name: "William Shakespeare"
+              - "《홍루몽》의 별칭"
+          - name: "조설근"
             attributes:
-              - "Playwright"
-              - "Author of Romeo and Juliet, written early in his career"
+              - "청나라 작가"
+              - "《홍루몽》 전 80회의 저자"
+          - name: "고악"
+            attributes:
+              - "일반적으로 《홍루몽》 후 40회의 이어 쓴 저자로 여겨짐"
         relation:
-          - node1: "Romeo and Juliet"
-            node2: "William Shakespeare"
-            type: "Author"
-          - node1: "Romeo and Juliet"
-            node2: "The Most Excellent and Lamentable Tragedy of Romeo and Juliet"
-            type: "Alias"
+          - node1: "홍루몽"
+            node2: "조설근"
+            type: "저자"
+          - node1: "홍루몽"
+            node2: "고악"
+            type: "저자"
+          - node1: "홍루몽"
+            node2: "석두기"
+            type: "별칭"
   extract_entity:
     description: |
-      Based on the user's question, process the key information extraction task following these steps:
-      1. Analyze logical connections: First, fully analyze the text content, identify its core logical relationships, and briefly annotate the core logic type;
-      2. Extract key entities: Based on the identified logical relationships, precisely extract key information from the text and classify it into clear entities, ensuring no core information is omitted and no redundant content is added;
-      3. Prioritize entities: Sort by the closeness of each entity's association with the core topic of the text, presenting the most important entities for understanding the main idea first;
+      사용자 질문을 바탕으로 다음 단계에 따라 핵심 정보 추출을 수행하세요:
+      1. 논리적 연관 정리: 텍스트를 완전히 분석해 핵심 논리 관계를 식별하고 그 유형을 간단히 표시
+      2. 핵심 엔티티 추출: 정리된 논리 관계를 중심으로 텍스트의 핵심 정보를 정확히 추출해 명확한 엔티티로 분류하고, 핵심 누락/불필요한 내용 추가가 없도록 함
+      3. 엔티티 우선순위 정렬: 텍스트 핵심 주제와의 연관성을 기준으로 정렬해 가장 중요한 엔티티를 우선 제시
     examples:
-      - text: "'Romeo and Juliet' is a tragedy written by William Shakespeare early in his career, and is one of the most frequently performed plays in world literature."
+      - text: "《홍루몽》은 《석두기》라는 이름으로도 알려져 있으며, 청나라 작가 조설근이 창작한 중국 고전 4대 명작 중 하나로 중국 봉건 사회의 백과사전으로 불립니다."
         node:
-          - name: "Romeo and Juliet"
-          - name: "William Shakespeare"
-          - name: "world literature"
+          - name: "홍루몽"
+          - name: "조설근"
+          - name: "중국 고전 4대 명작"
   fabri_text:
     with_tag: |
-      Please randomly generate a text related to %s, with a word count between [50-200], and try to include some professional terms or typical elements related to these tags to make the text more targeted and relevant.
+      %s 등과 관련된 내용을 포함하는 텍스트를 무작위로 생성하세요. 분량은 [50-200]자이며, 해당 태그와 관련된 전문 용어나 대표 요소를 최대한 포함해 텍스트의 관련성과 목적성을 높이세요.
     with_no_tag: |
-      Please randomly generate a text with freely chosen content, with a word count between [50-200].
+      자유 주제로 텍스트를 무작위로 생성하세요. 분량은 [50-200]자입니다.
 
 
-# Tenant configuration
+# 테넌트 설정
 tenant:
-  # Enable cross-tenant access (can be enabled for intranet environments)
+  # 테넌트 간 접근 기능 활성화 여부(내부망 환경에서만 권장)
   enable_cross_tenant_access: false

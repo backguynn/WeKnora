@@ -1,18 +1,18 @@
 #!/bin/bash
-# 开发环境启动脚本 - 只启动基础设施，app 和 frontend 需要手动在本地运行
+# 개발 환경 시작 스크립트 - 인프라만 시작하며 app과 frontend는 로컬에서 수동 실행
 
-# 设置颜色
+# 색상 설정
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
-NC='\033[0m' # 无颜色
+NC='\033[0m' # 색상 없음
 
-# 获取项目根目录
+# 프로젝트 루트 디렉터리 가져오기
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-# 日志函数
+# 로그 함수
 log_info() {
     printf "%b\n" "${BLUE}[INFO]${NC} $1"
 }
@@ -29,7 +29,7 @@ log_warning() {
     printf "%b\n" "${YELLOW}[WARNING]${NC} $1"
 }
 
-# 选择可用的 Docker Compose 命令
+# 사용 가능한 Docker Compose 명령 선택
 DOCKER_COMPOSE_BIN=""
 DOCKER_COMPOSE_SUBCMD=""
 
@@ -49,60 +49,60 @@ detect_compose_cmd() {
     return 1
 }
 
-# 显示帮助信息
+# 도움말 표시
 show_help() {
-    printf "%b\n" "${GREEN}WeKnora 开发环境脚本${NC}"
-    echo "用法: $0 [命令] [选项]"
+    printf "%b\n" "${GREEN}WeKnora 개발 환경 스크립트${NC}"
+    echo "사용법: $0 [명령] [옵션]"
     echo ""
-    echo "命令:"
-    echo "  start      启动基础设施服务（postgres, redis, docreader）"
-    echo "  stop       停止所有服务"
-    echo "  restart    重启所有服务"
-    echo "  logs       查看服务日志"
-    echo "  status     查看服务状态"
-    echo "  app        启动后端应用（本地运行）"
-    echo "  frontend   启动前端开发服务器（本地运行）"
-    echo "  help       显示此帮助信息"
+    echo "명령:"
+    echo "  start      인프라 서비스 시작(postgres, redis, docreader)"
+    echo "  stop       모든 서비스 중지"
+    echo "  restart    모든 서비스 재시작"
+    echo "  logs       서비스 로그 보기"
+    echo "  status     서비스 상태 보기"
+    echo "  app        백엔드 앱 시작(로컬 실행)"
+    echo "  frontend   프론트엔드 개발 서버 시작(로컬 실행)"
+    echo "  help       도움말 표시"
     echo ""
-    echo "可选 Profile（用于 start 命令）:"
-    echo "  --minio    启动 MinIO 对象存储"
-    echo "  --qdrant   启动 Qdrant 向量数据库"
-    echo "  --neo4j    启动 Neo4j 图数据库"
-    echo "  --jaeger   启动 Jaeger 链路追踪"
-    echo "  --full     启动所有可选服务"
+    echo "선택 Profile(start 명령용):"
+    echo "  --minio    MinIO 오브젝트 스토리지 시작"
+    echo "  --qdrant   Qdrant 벡터 DB 시작"
+    echo "  --neo4j    Neo4j 그래프 DB 시작"
+    echo "  --jaeger   Jaeger 트레이싱 시작"
+    echo "  --full     모든 선택 서비스 시작"
     echo ""
-    echo "示例："
-    echo "  $0 start                    # 启动基础服务"
-    echo "  $0 start --qdrant           # 启动基础服务 + Qdrant"
-    echo "  $0 start --qdrant --jaeger  # 启动基础服务 + Qdrant + Jaeger"
-    echo "  $0 start --full             # 启动所有服务"
-    echo "  $0 app                      # 在另一个终端启动后端"
-    echo "  $0 frontend                 # 在另一个终端启动前端"
+    echo "예시:"
+    echo "  $0 start                    # 기본 서비스 시작"
+    echo "  $0 start --qdrant           # 기본 서비스 + Qdrant"
+    echo "  $0 start --qdrant --jaeger  # 기본 서비스 + Qdrant + Jaeger"
+    echo "  $0 start --full             # 모든 서비스 시작"
+    echo "  $0 app                      # 다른 터미널에서 백엔드 시작"
+    echo "  $0 frontend                 # 다른 터미널에서 프론트엔드 시작"
 }
 
-# 检查 Docker
+# Docker 확인
 check_docker() {
     if ! command -v docker &> /dev/null; then
-        log_error "未安装Docker，请先安装Docker"
+        log_error "Docker가 설치되어 있지 않습니다. 먼저 Docker를 설치하세요"
         return 1
     fi
     
     if ! detect_compose_cmd; then
-        log_error "未检测到 Docker Compose"
+        log_error "Docker Compose를 감지하지 못했습니다"
         return 1
     fi
     
     if ! docker info &> /dev/null; then
-        log_error "Docker服务未运行"
+        log_error "Docker 서비스가 실행 중이 아닙니다"
         return 1
     fi
     
     return 0
 }
 
-# 启动基础设施服务
+# 인프라 서비스 시작
 start_services() {
-    log_info "启动开发环境基础设施服务..."
+    log_info "개발 환경 인프라 서비스를 시작합니다..."
     
     check_docker
     if [ $? -ne 0 ]; then
@@ -111,14 +111,14 @@ start_services() {
     
     cd "$PROJECT_ROOT"
     
-    # 检查 .env 文件
+    # .env 파일 확인
     if [ ! -f ".env" ]; then
-        log_error ".env 文件不存在，请先创建"
+        log_error ".env 파일이 없습니다. 먼저 생성하세요"
         return 1
     fi
     
-    # 解析 profile 参数
-    shift  # 移除 "start" 命令本身
+    # profile 파라미터 파싱
+    shift  # "start" 명령 제거
     PROFILES="--profile full"
     ENABLED_SERVICES=""
     
@@ -146,24 +146,24 @@ start_services() {
                 break
                 ;;
             *)
-                log_warning "未知参数: $1"
+                log_warning "알 수 없는 파라미터: $1"
                 ;;
         esac
         shift
     done
     
-    # 启动服务
+    # 서비스 시작
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml $PROFILES up -d
     
     if [ $? -eq 0 ]; then
-        log_success "基础设施服务已启动"
+        log_success "인프라 서비스가 시작되었습니다"
         echo ""
-        log_info "服务访问地址:"
+        log_info "서비스 접속 주소:"
         echo "  - PostgreSQL:    localhost:5432"
         echo "  - Redis:         localhost:6379"
         echo "  - DocReader:     localhost:50051"
         
-        # 根据启用的 profile 显示额外服务
+        # 활성화된 profile에 따른 추가 서비스 표시
         if [[ "$ENABLED_SERVICES" == *"minio"* ]]; then
             echo "  - MinIO:         localhost:9000 (Console: localhost:9001)"
         fi
@@ -178,19 +178,19 @@ start_services() {
         fi
         
         echo ""
-        log_info "接下来的步骤:"
-        printf "%b\n" "${YELLOW}1. 在新终端运行后端:${NC} make dev-app"
-        printf "%b\n" "${YELLOW}2. 在新终端运行前端:${NC} make dev-frontend"
+        log_info "다음 단계:"
+        printf "%b\n" "${YELLOW}1. 새 터미널에서 백엔드 실행:${NC} make dev-app"
+        printf "%b\n" "${YELLOW}2. 새 터미널에서 프론트엔드 실행:${NC} make dev-frontend"
         return 0
     else
-        log_error "服务启动失败"
+        log_error "서비스 시작 실패"
         return 1
     fi
 }
 
-# 停止服务
+# 서비스 중지
 stop_services() {
-    log_info "停止开发环境服务..."
+    log_info "개발 환경 서비스를 중지합니다..."
     
     check_docker
     if [ $? -ne 0 ]; then
@@ -201,58 +201,59 @@ stop_services() {
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml down
     
     if [ $? -eq 0 ]; then
-        log_success "所有服务已停止"
+        log_success "모든 서비스가 중지되었습니다"
         return 0
     else
-        log_error "服务停止失败"
+        log_error "서비스 중지 실패"
         return 1
     fi
 }
 
-# 重启服务
+# 서비스 재시작
 restart_services() {
     stop_services
     sleep 2
     start_services
 }
 
-# 查看日志
+# 로그 보기
 show_logs() {
     cd "$PROJECT_ROOT"
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml logs -f
 }
 
-# 查看状态
+# 상태 보기
 show_status() {
     cd "$PROJECT_ROOT"
     "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml ps
 }
 
-# 启动后端应用（本地）
+# 백엔드 앱 시작(로컬)
 start_app() {
-    log_info "启动后端应用（本地开发模式）..."
+    log_info "백엔드 앱을 시작합니다(로컬 개발 모드)..."
     
     cd "$PROJECT_ROOT"
     
-    # 检查 Go 是否安装
+    # Go 설치 여부 확인
     if ! command -v go &> /dev/null; then
-        log_error "Go 未安装"
+        log_error "Go가 설치되어 있지 않습니다"
         return 1
     fi
     
-    # 加载环境变量（使用 set -a 确保所有变量都被导出）
+    # 환경 변수 로드(set -a로 모두 export)
     if [ -f ".env" ]; then
-        log_info "加载 .env 文件..."
+        log_info ".env 파일을 로드합니다..."
         set -a
         source .env
         set +a
     else
-        log_error ".env 文件不存在，请先创建配置文件"
+        log_error ".env 파일이 없습니다. 먼저 구성 파일을 생성하세요"
         return 1
     fi
     
-    # 设置本地开发环境变量（覆盖 Docker 容器地址）
+    # 로컬 개발 환경 변수 설정(Docker 컨테이너 주소 덮어쓰기)
     export DB_HOST=localhost
+    export DB_PORT=${DB_PORT:-5432}
     export DOCREADER_ADDR=localhost:50051
     export DOCREADER_TRANSPORT=grpc
     export MINIO_ENDPOINT=localhost:9000
@@ -261,60 +262,60 @@ start_app() {
     export NEO4J_URI=bolt://localhost:7687
     export QDRANT_HOST=localhost
     
-    # 确保必要的环境变量已设置
+    # 필수 환경 변수 설정 확인
     if [ -z "$DB_DRIVER" ]; then
-        log_error "DB_DRIVER 环境变量未设置，请检查 .env 文件"
+        log_error "DB_DRIVER 환경 변수가 설정되지 않았습니다. .env 파일을 확인하세요"
         return 1
     fi
     
-    log_info "环境变量已设置，启动应用..."
-    log_info "数据库地址: $DB_HOST:${DB_PORT:-5432}"
+    log_info "환경 변수가 설정되었습니다. 앱을 시작합니다..."
+    log_info "데이터베이스 주소: $DB_HOST:${DB_PORT:-5432}"
     
     export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-gnu-folding-constant"
     if [[ "$(uname)" == "Darwin" ]]; then
       export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
     fi
 
-    # 检查是否安装了 Air（热重载工具）
+    # Air 설치 여부 확인(핫 리로드 도구)
     if command -v air &> /dev/null; then
-        log_success "检测到 Air，使用热重载模式启动..."
-        log_info "修改 Go 代码后将自动重新编译和重启"
+        log_success "Air가 감지되었습니다. 핫 리로드 모드로 시작합니다..."
+        log_info "Go 코드를 수정하면 자동으로 재컴파일 및 재시작됩니다"
         air
     else
-        log_info "未检测到 Air，使用普通模式启动"
-        log_warning "提示: 安装 Air 可以实现代码修改后自动重启"
-        log_info "安装命令: go install github.com/air-verse/air@latest"
+        log_info "Air가 감지되지 않았습니다. 일반 모드로 시작합니다"
+        log_warning "팁: Air를 설치하면 코드 수정 후 자동 재시작이 가능합니다"
+        log_info "설치 명령: go install github.com/air-verse/air@latest"
         LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
         go run -ldflags="$LDFLAGS" cmd/server/main.go
     fi
 }
 
-# 启动前端（本地）
+# 프론트엔드 시작(로컬)
 start_frontend() {
-    log_info "启动前端开发服务器..."
+    log_info "프론트엔드 개발 서버를 시작합니다..."
     
     cd "$PROJECT_ROOT/frontend"
     
-    # 检查 npm 是否安装
+    # npm 설치 여부 확인
     if ! command -v npm &> /dev/null; then
-        log_error "npm 未安装"
+        log_error "npm이 설치되어 있지 않습니다"
         return 1
     fi
     
-    # 检查依赖是否已安装
+    # 의존성 설치 여부 확인
     if [ ! -d "node_modules" ]; then
-        log_warning "node_modules 不存在，正在安装依赖..."
+        log_warning "node_modules가 없습니다. 의존성을 설치합니다..."
         npm install
     fi
     
-    log_info "启动 Vite 开发服务器..."
-    log_info "前端将运行在 http://localhost:5173"
+    log_info "Vite 개발 서버를 시작합니다..."
+    log_info "프론트엔드는 http://localhost:5173 에서 실행됩니다"
     
-    # 运行开发服务器
+    # 개발 서버 실행
     npm run dev
 }
 
-# 解析命令
+# 명령 파싱
 CMD="${1:-help}"
 case "$CMD" in
     start)
@@ -342,7 +343,7 @@ case "$CMD" in
         show_help
         ;;
     *)
-        log_error "未知命令: $CMD"
+        log_error "알 수 없는 명령: $CMD"
         show_help
         exit 1
         ;;

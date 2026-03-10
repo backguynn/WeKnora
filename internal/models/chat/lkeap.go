@@ -7,31 +7,31 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// LKEAPChat 腾讯云知识引擎原子能力 (LKEAP) 聊天实现
-// 支持 DeepSeek-R1, DeepSeek-V3 系列模型，具备思维链能力
-// 参考：https://cloud.tencent.com/document/product/1772/115963
+// LKEAPChat Tencent Cloud Knowledge Engine Atomic Ability (LKEAP) 채팅 구현
+// DeepSeek-R1, DeepSeek-V3 계열 모델 지원, chain-of-thought 기능 제공
+// 참고: https://cloud.tencent.com/document/product/1772/115963
 //
-// 与标准 OpenAI API 的区别：
-// 1. thinking 参数格式不同：LKEAP 使用 {"type": "enabled"/"disabled"}
-// 2. 仅 DeepSeek V3.x 系列需要显式设置 thinking 参数，R1 系列默认开启
+// 표준 OpenAI API와의 차이:
+// 1. thinking 파라미터 형식이 다름: LKEAP는 {"type": "enabled"/"disabled"} 사용
+// 2. DeepSeek V3.x 계열만 thinking 파라미터를 명시적으로 설정 필요, R1 계열은 기본 활성
 type LKEAPChat struct {
 	*RemoteAPIChat
 }
 
-// LKEAPThinkingConfig 思维链配置（LKEAP 特有格式）
+// LKEAPThinkingConfig chain-of-thought 설정(LKEAP 전용 형식)
 type LKEAPThinkingConfig struct {
-	Type string `json:"type"` // "enabled" 或 "disabled"
+	Type string `json:"type"` // "enabled" 또는 "disabled"
 }
 
-// LKEAPChatCompletionRequest LKEAP 自定义请求结构体
+// LKEAPChatCompletionRequest LKEAP 커스텀 요청 구조체
 type LKEAPChatCompletionRequest struct {
 	openai.ChatCompletionRequest
-	Thinking *LKEAPThinkingConfig `json:"thinking,omitempty"` // 思维链开关（仅 V3.x 系列）
+	Thinking *LKEAPThinkingConfig `json:"thinking,omitempty"` // chain-of-thought 토글(V3.x 계열만)
 }
 
-// NewLKEAPChat 创建 LKEAP 聊天实例
+// NewLKEAPChat LKEAP 채팅 인스턴스 생성
 func NewLKEAPChat(config *ChatConfig) (*LKEAPChat, error) {
-	// 确保 provider 设置正确
+	// provider 설정 확인
 	config.Provider = string(provider.ProviderLKEAP)
 
 	remoteChat, err := NewRemoteAPIChat(config)
@@ -43,26 +43,26 @@ func NewLKEAPChat(config *ChatConfig) (*LKEAPChat, error) {
 		RemoteAPIChat: remoteChat,
 	}
 
-	// 设置请求自定义器，添加 LKEAP 特有的 thinking 参数
+	// 요청 커스터마이저 설정, LKEAP 전용 thinking 파라미터 추가
 	remoteChat.SetRequestCustomizer(chat.customizeRequest)
 
 	return chat, nil
 }
 
-// isDeepSeekV3Model 检查是否为 DeepSeek V3.x 系列模型
+// isDeepSeekV3Model DeepSeek V3.x 계열 모델 여부 확인
 func (c *LKEAPChat) isDeepSeekV3Model() bool {
 	return strings.Contains(strings.ToLower(c.GetModelName()), "deepseek-v3")
 }
 
-// customizeRequest 自定义 LKEAP 请求
+// customizeRequest LKEAP 요청 커스터마이즈
 func (c *LKEAPChat) customizeRequest(req *openai.ChatCompletionRequest, opts *ChatOptions, isStream bool) (any, bool) {
-	// 仅对 DeepSeek V3.x 系列模型需要特殊处理 thinking 参数
-	// R1 系列模型默认开启思维链，无需额外参数
+	// DeepSeek V3.x 계열에만 thinking 파라미터 특별 처리
+	// R1 계열 모델은 chain-of-thought 기본 활성, 추가 파라미터 불필요
 	if !c.isDeepSeekV3Model() || opts == nil || opts.Thinking == nil {
-		return nil, false // 使用标准请求
+		return nil, false // 표준 요청 사용
 	}
 
-	// 构建 LKEAP 特有请求
+	// LKEAP 전용 요청 구성
 	lkeapReq := LKEAPChatCompletionRequest{
 		ChatCompletionRequest: *req,
 	}
@@ -73,5 +73,5 @@ func (c *LKEAPChat) customizeRequest(req *openai.ChatCompletionRequest, opts *Ch
 	}
 	lkeapReq.Thinking = &LKEAPThinkingConfig{Type: thinkingType}
 
-	return lkeapReq, true // 使用原始 HTTP 请求
+	return lkeapReq, true // 원본 HTTP 요청 사용
 }

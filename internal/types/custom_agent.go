@@ -65,7 +65,7 @@ type CustomAgentConfig struct {
 	// ===== Basic Settings =====
 	// Agent mode: "quick-answer" for RAG mode, "smart-reasoning" for ReAct agent mode
 	AgentMode string `yaml:"agent_mode" json:"agent_mode"`
-	// System prompt for the agent (unified prompt, uses web_search_status placeholder for dynamic behavior)
+	// System prompt for the agent (unified prompt, uses {{web_search_status}} placeholder for dynamic behavior)
 	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
 	// Context template for normal mode (how to format retrieved chunks)
 	ContextTemplate string `yaml:"context_template" json:"context_template"`
@@ -241,19 +241,19 @@ func (a *CustomAgent) IsAgentMode() bool {
 func GetBuiltinQuickAnswerAgent(tenantID uint64) *CustomAgent {
 	return &CustomAgent{
 		ID:          BuiltinQuickAnswerID,
-		Name:        "Quick Answer",
-		Description: "Knowledge base RAG Q&A for fast and accurate answers",
+		Name:        "빠른 답변",
+		Description: "지식베이스 기반 RAG 답변, 빠르고 정확하게 질문에 답변합니다",
 		IsBuiltin:   true,
 		TenantID:    tenantID,
 		Config: CustomAgentConfig{
 			AgentMode:    AgentModeQuickAnswer,
 			SystemPrompt: "",
-			ContextTemplate: `Answer the user's question based on the following reference materials. IMPORTANT: Always respond in the same language as the user's question.
+			ContextTemplate: `다음 참고 자료를 바탕으로 사용자 질문에 답변하세요.
 
-Reference materials:
+참고 자료:
 {{contexts}}
 
-User question: {{query}}`,
+사용자 질문: {{query}}`,
 			Temperature:                 0.7,
 			MaxCompletionTokens:         2048,
 			WebSearchEnabled:            true,
@@ -284,8 +284,8 @@ User question: {{query}}`,
 func GetBuiltinSmartReasoningAgent(tenantID uint64) *CustomAgent {
 	return &CustomAgent{
 		ID:          BuiltinSmartReasoningID,
-		Name:        "Smart Reasoning",
-		Description: "ReAct reasoning framework with multi-step thinking and tool calling",
+		Name:        "스마트 추론",
+		Description: "ReAct 추론 프레임워크, 다단계 사고 및 도구 호출 지원",
 		IsBuiltin:   true,
 		TenantID:    tenantID,
 		Config: CustomAgentConfig{
@@ -321,8 +321,8 @@ func GetBuiltinSmartReasoningAgent(tenantID uint64) *CustomAgent {
 func GetBuiltinDataAnalystAgent(tenantID uint64) *CustomAgent {
 	return &CustomAgent{
 		ID:          BuiltinDataAnalystID,
-		Name:        "Data Analyst",
-		Description: "Professional data analysis agent with SQL query and statistical analysis for CSV/Excel files",
+		Name:        "데이터 분석가",
+		Description: "전문 데이터 분석 에이전트, CSV/Excel 파일의 SQL 쿼리 및 통계 분석 지원",
 		Avatar:      "📊",
 		IsBuiltin:   true,
 		TenantID:    tenantID,

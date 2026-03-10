@@ -1,5 +1,5 @@
 # =========================
-# 构建阶段（轻量化：仅文档解析 + 图片提取，无 OCR/VLM）
+# 빌드 단계 (경량화: 문서 파싱 + 이미지 추출만, OCR/VLM 없음)
 # =========================
 FROM python:3.10.18-bookworm AS builder
 
@@ -11,7 +11,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 
 WORKDIR /app
 
-# 安装构建依赖
+# 빌드 의존성 설치
 RUN apt-get update && apt-get install -y \
     gcc \
     python3-dev \
@@ -26,10 +26,11 @@ RUN apt-get update && apt-get install -y \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# 检查是否存在本地protoc安装包，如果存在则离线安装，否则在线安装
+# 로컬 protoc 설치 패키지 존재 여부 확인: 있으면 오프라인 설치, 없으면 온라인 설치
 ARG TARGETARCH
 COPY packages/ /app/packages/
-RUN echo "检查本地protoc安装包..." && \
+RUN echo "로컬 protoc 설치 패키지 확인..." && \
+    # 대상 아키텍처에 맞는 protoc 패키지명 선택
     case ${TARGETARCH} in \
         "amd64") PROTOC_ARCH="x86_64" ;; \
         "arm64") PROTOC_ARCH="aarch_64" ;; \
@@ -38,34 +39,36 @@ RUN echo "检查本地protoc安装包..." && \
     esac && \
     PROTOC_PACKAGE="protoc-3.19.4-linux-${PROTOC_ARCH}.zip" && \
     if [ -f "/app/packages/${PROTOC_PACKAGE}" ]; then \
-        echo "发现本地protoc安装包，将进行离线安装"; \
+        echo "로컬 protoc 설치 패키지 발견, 오프라인 설치 진행"; \
+        # 오프라인 설치: 로컬 패키지 사용
         cp /app/packages/${PROTOC_PACKAGE} /app/ && \
         unzip -o /app/${PROTOC_PACKAGE} -d /usr/local && \
         chmod +x /usr/local/bin/protoc && \
         rm -f /app/${PROTOC_PACKAGE}; \
     else \
-        echo "未发现本地protoc安装包，将进行在线安装"; \
+        echo "로컬 protoc 설치 패키지 없음, 온라인 설치 진행"; \
+        # 온라인 설치: 네트워크에서 다운로드
         curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.19.4/${PROTOC_PACKAGE} && \
         unzip -o ${PROTOC_PACKAGE} -d /usr/local && \
         chmod +x /usr/local/bin/protoc && \
         rm -f ${PROTOC_PACKAGE}; \
     fi
 
-# 复制依赖文件
+# 의존성 파일 복사
 COPY docreader/pyproject.toml docreader/uv.lock ./
 RUN pip install uv --break-system-packages && \
     python -m uv sync --locked --no-dev
 
-# 复制源代码和生成脚本
+# 소스 코드와 생성 스크립트 복사
 COPY docreader docreader
 
-# 生成 protobuf 代码（使用 venv 中的 grpc_tools）
+# protobuf 코드 생성 (venv grpc_tools 사용)
 ENV PATH="/app/.venv/bin:${PATH}"
 RUN chmod +x docreader/scripts/generate_proto.sh && \
     bash docreader/scripts/generate_proto.sh
 
 # =========================
-# 运行阶段（轻量化）
+# 실행 단계 (경량화)
 # =========================
 FROM python:3.10.18-bookworm AS runner
 
@@ -77,7 +80,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 
 WORKDIR /app
 
-# 安装运行时依赖（已移除 OCR/PaddleOCR 相关依赖）
+# 런타임 의존성 설치 (OCR/PaddleOCR 관련 의존성 제거됨)
 RUN apt-get update && apt-get install -y \
     libjpeg62-turbo \
     wget \
@@ -98,9 +101,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 grpc_health_probe
+# grpc_health_probe 설치
 ARG TARGETARCH
 RUN GRPC_HEALTH_PROBE_VERSION=v0.4.24 && \
+    # 대상 아키텍처에 맞는 바이너리 선택
     case ${TARGETARCH} in \
         "amd64") ARCH="amd64" ;; \
         "arm64") ARCH="arm64" ;; \
@@ -110,7 +114,7 @@ RUN GRPC_HEALTH_PROBE_VERSION=v0.4.24 && \
     wget -qO/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${ARCH} && \
     chmod +x /bin/grpc_health_probe
 
-# 从构建阶段复制已安装的依赖和生成的代码
+# 빌드 단계에서 설치된 의존성과 생성 코드 복사
 ENV VIRTUAL_ENV=/app/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"

@@ -1,114 +1,114 @@
-# 常见问题
+# FAQ
 
-## 1. 如何查看日志？
+## 1. 로그는 어떻게 확인하나요?
 ```bash
 docker compose logs -f app docreader postgres
 ```
 
-## 2. 如何启动和停止服务？
+## 2. 서비스를 어떻게 시작/중지하나요?
 ```bash
-# 启动服务
+# 서비스 시작
 ./scripts/start_all.sh
 
-# 停止服务
+# 서비스 중지
 ./scripts/start_all.sh --stop
 
-# 清空数据库
+# 데이터베이스 초기화
 ./scripts/start_all.sh --stop && make clean-db
 ```
 
-## 3. 服务启动后无法正常上传文档？
+## 3. 서비스 시작 후 문서 업로드가 정상 동작하지 않나요?
 
-通常是Embedding模型和对话模型没有正确被设置导致。按照以下步骤进行排查
+대부분 Embedding 모델과 대화 모델이 올바르게 설정되지 않은 경우입니다. 아래 절차로 점검하세요.
 
-1. 查看`.env`配置中的模型信息是否配置完整，其中如果使用ollama访问本地模型，需要确保本地ollama服务正常运行，同时在`.env`中的如下环境变量需要正确设置:
+1. `.env`의 모델 설정이 완전한지 확인하세요. 로컬 모델을 ollama로 접근하는 경우, 로컬 ollama 서비스가 정상 실행 중인지 확인하고 아래 환경 변수를 올바르게 설정해야 합니다:
 ```bash
 # LLM Model
 INIT_LLM_MODEL_NAME=your_llm_model
 # Embedding Model
 INIT_EMBEDDING_MODEL_NAME=your_embedding_model
-# Embedding模型向量维度
+# Embedding 모델 벡터 차원
 INIT_EMBEDDING_MODEL_DIMENSION=your_embedding_model_dimension
-# Embedding模型的ID，通常是一个字符串
+# Embedding 모델 ID(보통 문자열)
 INIT_EMBEDDING_MODEL_ID=your_embedding_model_id
 ```
 
-如果是通过remote api访问模型，则需要额外提供对应的`BASE_URL`和`API_KEY`:
+remote API로 모델을 호출하는 경우 해당 `BASE_URL`과 `API_KEY`를 추가로 제공해야 합니다:
 ```bash
-# LLM模型的访问地址
+# LLM 모델 접근 주소
 INIT_LLM_MODEL_BASE_URL=your_llm_model_base_url
-# LLM模型的API密钥，如果需要身份验证，可以设置
+# LLM 모델 API 키(인증이 필요하면 설정)
 INIT_LLM_MODEL_API_KEY=your_llm_model_api_key
-# Embedding模型的访问地址
+# Embedding 모델 접근 주소
 INIT_EMBEDDING_MODEL_BASE_URL=your_embedding_model_base_url
-# Embedding模型的API密钥，如果需要身份验证，可以设置
+# Embedding 모델 API 키(인증이 필요하면 설정)
 INIT_EMBEDDING_MODEL_API_KEY=your_embedding_model_api_key
 ```
 
-当需要重排序功能时，需要额外配置Rerank模型，具体配置如下：
+재정렬 기능이 필요할 경우 Rerank 모델을 추가로 설정해야 합니다. 설정 예시는 다음과 같습니다:
 ```bash
-# 使用的Rerank模型名称
+# 사용할 Rerank 모델 이름
 INIT_RERANK_MODEL_NAME=your_rerank_model_name
-# Rerank模型的访问地址
+# Rerank 모델 접근 주소
 INIT_RERANK_MODEL_BASE_URL=your_rerank_model_base_url
-# Rerank模型的API密钥，如果需要身份验证，可以设置
+# Rerank 모델 API 키(인증이 필요하면 설정)
 INIT_RERANK_MODEL_API_KEY=your_rerank_model_api_key
 ```
 
-2. 查看主服务日志，是否有`ERROR`日志输出
+2. 메인 서비스 로그에 `ERROR` 로그가 출력되는지 확인하세요.
 
-## 4. 没有图片或者显示无效的图片链接？
+## 4. 이미지가 없거나 잘못된 이미지 링크가 표시되나요?
 
-当使用多模态功能时，如果遇到图片无法显示或显示无效链接的问题，请按照以下步骤排查：
+멀티모달 기능 사용 시 이미지가 표시되지 않거나 잘못된 링크가 보이는 경우, 아래 절차로 점검하세요.
 
-### 1. 确认多模态功能已正确配置
+### 1. 멀티모달 기능이 올바르게 설정되었는지 확인
 
-在知识库设置中开启**高级设置 - 多模态功能**，并在界面中配置相应的多模态模型。
+지식베이스 설정에서 **고급 설정 - 멀티모달 기능**을 켜고, 화면에서 해당 멀티모달 모델을 설정하세요.
 
-### 2. 确认 MinIO 服务已启动
+### 2. MinIO 서비스가 실행 중인지 확인
 
-如果多模态功能配置使用的是 MinIO 存储，需要确保 MinIO 镜像已正确启动：
+멀티모달 기능이 MinIO 스토리지를 사용하는 경우, MinIO 이미지가 정상적으로 실행 중이어야 합니다:
 
 ```bash
-# 启动 MinIO 服务
+# MinIO 서비스 시작
 docker-compose --profile minio up -d
 
-# 或者启动完整服务（包括 MinIO、Jaeger、Neo4j、Qdrant）
+# 또는 전체 서비스 시작(MinIO, Jaeger, Neo4j, Qdrant 포함)
 docker-compose --profile full up -d
 ```
 
-### 3. 检查 MinIO Bucket 权限
+### 3. MinIO Bucket 권한 확인
 
-确保 MinIO 对应的 bucket 具有正确的读写权限：
+MinIO의 해당 bucket에 적절한 읽기/쓰기 권한이 있는지 확인하세요:
 
-1. 访问 MinIO 控制台：`http://localhost:9001`（默认端口）
-2. 使用 `.env` 中配置的 `MINIO_ACCESS_KEY_ID` 和 `MINIO_SECRET_ACCESS_KEY` 登录
-3. 进入对应的 bucket，检查并设置访问策略为**公开读取**或**公开读写**
+1. MinIO 콘솔 접속: `http://localhost:9001` (기본 포트)
+2. `.env`에 설정한 `MINIO_ACCESS_KEY_ID`와 `MINIO_SECRET_ACCESS_KEY`로 로그인
+3. 해당 bucket으로 들어가 접근 정책을 **공개 읽기** 또는 **공개 읽기/쓰기**로 설정
 
-**重要提示**：
-- Bucket 名称不要包含特殊字符（包括中文），建议使用小写字母、数字和连字符
-- 如果无法修改现有 bucket 的权限，可以在配置中填入一个不存在的 bucket 名称，本项目会自动创建对应的 bucket 并设置好正确的权限
+**중요 안내**:
+- Bucket 이름에 특수 문자를 포함하지 마세요(중국어 포함). 소문자, 숫자, 하이픈 사용을 권장합니다.
+- 기존 bucket 권한을 변경할 수 없다면 설정에 존재하지 않는 bucket 이름을 입력하세요. 프로젝트가 자동으로 bucket을 생성하고 권한을 설정합니다.
 
-### 4. 配置 MINIO_PUBLIC_ENDPOINT
+### 4. MINIO_PUBLIC_ENDPOINT 설정
 
-在 `docker-compose.yml` 文件中，`MINIO_PUBLIC_ENDPOINT` 变量默认配置为 `http://localhost:9000`。
+`docker-compose.yml`에서 `MINIO_PUBLIC_ENDPOINT` 기본값은 `http://localhost:9000`입니다.
 
-**重要提示**：如果你需要从其他设备或容器访问图片，`localhost` 可能无法正常工作，需要将其替换为本机的实际 IP 地址：
+**중요 안내**: 다른 장치 또는 컨테이너에서 이미지에 접근해야 한다면 `localhost`가 동작하지 않을 수 있으므로, 이를 호스트의 실제 IP 주소로 변경하세요.
 
 
-## 5. 平台兼容性说明
+## 5. 플랫폼 호환성 안내
 
-**重要提示**：`OCR_BACKEND=paddle` 模式在部分平台上可能无法正常运行。如果遇到 PaddleOCR 启动失败的问题，请选择以下解决方案
+**중요 안내**: `OCR_BACKEND=paddle` 모드는 일부 플랫폼에서 정상 동작하지 않을 수 있습니다. PaddleOCR 시작 실패 시 다음 해결 방법을 선택하세요.
 
-### 方案一：关闭 OCR 识别
+### 방법 1: OCR 인식 비활성화
 
-在 `docker-compose.yml` 文件的 `docreader` 服务中删除 `OCR_BACKEND` 配置，然后重启 docreader 服务
+`docker-compose.yml`의 `docreader` 서비스에서 `OCR_BACKEND` 설정을 제거한 뒤 docreader 서비스를 재시작하세요.
 
-**注意**：设置为 `no_ocr` 后，文档解析将不会使用 OCR 功能，这可能会影响图片和扫描文档的文字识别效果。
+**주의**: `no_ocr`로 설정하면 문서 파싱에서 OCR 기능을 사용하지 않습니다. 이미지/스캔 문서의 문자 인식 정확도에 영향을 줄 수 있습니다.
 
-### 方案二：使用外部 OCR 模型（推荐）
+### 방법 2: 외부 OCR 모델 사용(권장)
 
-如果需要 OCR 功能，可以使用外部的视觉语言模型（VLM）来替代 PaddleOCR。在 `docker-compose.yml` 文件的 `docreader` 服务中配置：
+OCR 기능이 필요하다면 외부 시각 언어 모델(VLM)로 PaddleOCR을 대체할 수 있습니다. `docker-compose.yml`의 `docreader` 서비스에 다음을 설정하세요:
 
 ```yaml
 environment:
@@ -118,30 +118,30 @@ environment:
   - OCR_MODEL=${OCR_MODEL:-}
 ```
 
-然后重启 docreader 服务
+그 다음 docreader 서비스를 재시작하세요.
 
-**优势**：使用外部 OCR 模型可以获得更好的识别效果，且不受平台限制。
+**장점**: 외부 OCR 모델은 더 나은 인식 성능을 제공하며 플랫폼 제한이 적습니다.
 
-## 6. 如何使用数据分析功能？
+## 6. 데이터 분석 기능은 어떻게 사용하나요?
 
-在使用数据分析功能前，请确保智能体已配置相关工具：
+데이터 분석 기능을 사용하기 전에 에이전트에 관련 도구가 설정되어 있는지 확인하세요:
 
-1. **智能推理**：需在工具配置中勾选以下两个工具：
-   - 查看数据元信息
-   - 数据分析
+1. **지능형 추론**: 도구 설정에서 아래 두 도구를 선택해야 합니다:
+   - 데이터 메타 정보 조회
+   - 데이터 분석
 
-2. **快速问答智能体**：无需手动选择工具，即可直接进行简单的数据查询操作。
+2. **빠른 Q&A 에이전트**: 도구를 수동으로 선택하지 않아도 간단한 데이터 조회를 수행할 수 있습니다.
 
-### 注意事项与使用规范
+### 주의 사항 및 사용 규칙
 
-1. **支持的文件格式**
-   - 目前仅支持 **CSV** (`.csv`) 和 **Excel** (`.xlsx`, `.xls`) 格式的文件。
-   - 对于复杂的 Excel 文件，如果读取失败，建议将其转换为标准的 CSV 格式后重新上传。
+1. **지원 파일 형식**
+   - 현재 **CSV** (`.csv`) 및 **Excel** (`.xlsx`, `.xls`) 파일만 지원합니다.
+   - 복잡한 Excel 파일에서 읽기 실패 시 표준 CSV 형식으로 변환해 다시 업로드하는 것을 권장합니다.
 
-2. **查询限制**
-   - 仅支持 **只读查询**，包括 `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `PRAGMA` 等语句。
-   - 禁止执行任何修改数据的操作，如 `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` 等。
+2. **쿼리 제한**
+   - **읽기 전용 쿼리**만 지원하며 `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `PRAGMA` 등을 포함합니다.
+   - `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` 등 데이터 변경 작업은 금지됩니다.
 
 
 ## P.S.
-如果以上方式未解决问题，请在issue中描述您的问题，并提供必要的日志信息辅助我们进行问题排查
+위 방법으로 해결되지 않으면 issue에 문제 내용을 남기고, 문제 분석을 위해 필요한 로그 정보를 제공해 주세요.

@@ -5,19 +5,19 @@ from pydantic import BaseModel, Field
 
 
 class HeaderTrackerHook(BaseModel):
-    """表头追踪Hook的配置类，支持多种场景的表头识别"""
+    """표 헤더 추적 Hook 설정 클래스, 다양한 표 헤더 인식 시나리오 지원"""
 
     start_pattern: Pattern[str] = Field(
-        description="表头开始匹配（正则表达式或字符串）"
+        description="표 헤더 시작 매칭(정규식 또는 문자열)"
     )
-    end_pattern: Pattern[str] = Field(description="表头结束匹配（正则表达式或字符串）")
+    end_pattern: Pattern[str] = Field(description="표 헤더 종료 매칭(정규식 또는 문자열)")
     extract_header_fn: Callable[[Match[str]], str] = Field(
         default=lambda m: m.group(0),
-        description="从开始匹配结果中提取表头内容的函数（默认取匹配到的整个内容）",
+        description="시작 매칭 결과에서 헤더 내용을 추출하는 함수(기본: 매칭된 전체 내용)",
     )
-    priority: int = Field(default=0, description="优先级（多个配置时，高优先级先匹配）")
+    priority: int = Field(default=0, description="우선순위(복수 설정 시 높은 우선순위 먼저 매칭)")
     case_sensitive: bool = Field(
-        default=True, description="是否大小写敏感（仅当传入字符串pattern时生效）"
+        default=True, description="대소문자 구분 여부(문자열 pattern 입력 시에만 적용)"
     )
 
     def __init__(
@@ -38,23 +38,23 @@ class HeaderTrackerHook(BaseModel):
         )
 
 
-# 初始化表头Hook配置（提供默认配置：支持Markdown表格、代码块）
+# 표 헤더 Hook 설정 초기화(기본 설정 제공: Markdown 표, 코드 블록 지원)
 DEFAULT_CONFIGS = [
-    # 代码块配置（```开头，```结尾）
+    # 코드 블록 설정(```로 시작, ```로 종료)
     # HeaderTrackerHook(
-    #     # 代码块开始（支持语言指定）
+    #     # 코드 블록 시작(언어 지정 지원)
     #     start_pattern=r"^\s*```(\w+).*(?!```$)",
-    #     # 代码块结束
+    #     # 코드 블록 종료
     #     end_pattern=r"^\s*```.*$",
     #     extract_header_fn=lambda m: f"```{m.group(1)}" if m.group(1) else "```",
-    #     priority=20,  # 代码块优先级高于表格
+    #     priority=20,  # 코드 블록 우선순위가 표보다 높음
     #     case_sensitive=True,
     # ),
-    # Markdown表格配置（表头带下划线）
+    # Markdown 표 설정(헤더에 밑줄 포함)
     HeaderTrackerHook(
-        # 表头行 + 分隔行
+        # 헤더 행 + 구분 행
         start_pattern=r"^\s*(?:\|[^|\n]*)+[\r\n]+\s*(?:\|\s*:?-{3,}:?\s*)+\|?[\r\n]+$",
-        # 空行或非表格内容
+        # 빈 줄 또는 비표 콘텐츠
         end_pattern=r"^\s*$|^\s*[^|\s].*$",
         priority=15,
         case_sensitive=False,
@@ -65,17 +65,17 @@ DEFAULT_CONFIGS.sort(key=lambda x: -x.priority)
 
 # 定义Hook状态数据结构
 class HeaderTracker(BaseModel):
-    """表头追踪 Hook 的状态类"""
+    """표 헤더 추적 Hook 상태 클래스"""
 
     header_hook_configs: List[HeaderTrackerHook] = Field(default=DEFAULT_CONFIGS)
     active_headers: Dict[int, str] = Field(default_factory=dict)
     ended_headers: set[int] = Field(default_factory=set)
 
     def update(self, split: str) -> Dict[int, str]:
-        """检测当前split中的表头开始/结束，更新Hook状态"""
+        """현재 split에서 헤더 시작/종료를 감지하고 Hook 상태를 업데이트"""
         new_headers: Dict[int, str] = {}
 
-        # 1. 检查是否有表头结束标记
+        # 1. 헤더 종료 마커 확인
         for config in self.header_hook_configs:
             if config.priority in self.active_headers and config.end_pattern.search(
                 split
@@ -83,7 +83,7 @@ class HeaderTracker(BaseModel):
                 self.ended_headers.add(config.priority)
                 del self.active_headers[config.priority]
 
-        # 2. 检查是否有新的表头开始标记（只处理未活跃且未结束的）
+        # 2. 새로운 헤더 시작 마커 확인(활성/종료되지 않은 항목만)
         for config in self.header_hook_configs:
             if (
                 config.priority not in self.active_headers
@@ -95,15 +95,15 @@ class HeaderTracker(BaseModel):
                     self.active_headers[config.priority] = header
                     new_headers[config.priority] = header
 
-        # 3. 检查是否所有活跃表头都已结束（清空结束标记）
+        # 3. 모든 활성 헤더가 종료되었는지 확인(종료 마커 초기화)
         if not self.active_headers:
             self.ended_headers.clear()
 
         return new_headers
 
     def get_headers(self) -> str:
-        """获取当前所有活跃表头的拼接文本（按优先级排序）"""
-        # 按优先级降序排列表头
+        """현재 활성 헤더를 우선순위 순으로 결합한 텍스트 반환"""
+        # 우선순위 내림차순으로 헤더 정렬
         sorted_headers = sorted(self.active_headers.items(), key=lambda x: -x[0])
         return (
             "\n".join([header for _, header in sorted_headers])

@@ -110,11 +110,13 @@ func (c *RemoteAPIChat) BuildChatCompletionRequest(messages []Message, opts *Cha
 		if opts.TopP > 0 {
 			req.TopP = float32(opts.TopP)
 		}
-		if opts.MaxTokens > 0 {
-			req.MaxTokens = opts.MaxTokens
-		}
+		// Token limit handling: prefer max_completion_tokens for OpenAI API v1.0+ compatibility
+		// If only max_tokens is set, use it as max_completion_tokens value
+		// Don't set MaxTokens to avoid "Unsupported parameter" error with latest OpenAI models
 		if opts.MaxCompletionTokens > 0 {
 			req.MaxCompletionTokens = opts.MaxCompletionTokens
+		} else if opts.MaxTokens > 0 {
+			req.MaxCompletionTokens = opts.MaxTokens
 		}
 		if opts.FrequencyPenalty > 0 {
 			req.FrequencyPenalty = float32(opts.FrequencyPenalty)

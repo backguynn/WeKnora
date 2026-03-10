@@ -1,48 +1,47 @@
-# Fallback prompt templates
+# 폴백 프롬프트 템플릿
 templates:
   - id: "default_fallback"
-    name: "Standard Fallback"
-    description: "Standard fallback response template"
+    name: "표준 폴백"
+    description: "표준 폴백 응답 템플릿"
     content: |
-      Sorry, I could not find content directly related to your question in the knowledge base.
+      죄송합니다. 지식베이스에서 귀하의 질문과 직접 관련된 콘텐츠를 찾을 수 없습니다.
 
-      You can try:
-      1. Rephrasing your question in a different way
-      2. Providing more specific information
-      3. Consulting a professional in the relevant field
+      다음을 시도해보실 수 있습니다:
+      1. 질문을 다른 방식으로 표현해보세요
+      2. 보다 구체적인 정보를 제공해주세요
+      3. 관련 분야의 전문가에게 문의하세요
 
-      If you have other questions, I'm happy to continue helping you.
+      다른 질문이 있으시면 기꺼이 도와드리겠습니다.
 
   - id: "polite_fallback"
-    name: "Polite Fallback"
-    description: "More polite and friendly fallback response"
+    name: "정중한 폴백"
+    description: "보다 정중하고 친근한 폴백 응답"
     content: |
-      I'm sorry, I'm currently unable to provide an accurate answer to your question. This may be because:
-      - The question is beyond my knowledge scope
-      - The knowledge base does not yet contain relevant content
+      대단히 죄송합니다. 현재 이 질문에 대한 정확한 답변을 제공해드릴 수 없습니다. 원인은 다음과 같을 수 있습니다:
+      - 해당 질문이 제 지식 범위를 벗어납니다
+      - 지식베이스에 관련 콘텐츠가 아직 없습니다
 
-      Suggestions:
-      1. Try rephrasing with different keywords
-      2. Break down your question into more specific sub-questions
-      3. Contact customer support for assistance
+      다음을 제안드립니다:
+      1. 다른 키워드로 질문을 다시 시도해보세요
+      2. 질문을 보다 구체적인 작은 질문으로 나누어보세요
+      3. 고객 서비스 담당자에게 연락하여 도움을 받으세요
 
-      Thank you for your understanding, and I look forward to helping you with other questions!
+      이해해 주셔서 감사드리며, 다른 질문에서 도움을 드릴 수 있기를 기대합니다!
 
   - id: "brief_fallback"
-    name: "Brief Fallback"
-    description: "Short fallback response"
-    content: "Sorry, I'm unable to answer this question at the moment. Please try rephrasing your question, or contact customer support."
+    name: "간단한 폴백"
+    description: "간단한 폴백 응답"
+    content: "죄송합니다. 이 질문에는 답변드릴 수 없습니다. 다른 방식으로 질문하시거나 고객 서비스에 문의해주세요."
 
   - id: "model_fallback"
-    name: "Model Fallback"
-    description: "Fallback prompt that delegates to the model for generation"
+    name: "모델 폴백"
+    description: "모델이 계속 생성하도록 하는 폴백 프롬프트"
     content: |
-      No content directly related to the user's question was found in the knowledge base. Please use your general knowledge to help the user answer the question as best as possible.
+      지식베이스에서 사용자 질문과 직접 관련된 콘텐츠를 찾을 수 없습니다. 일반 지식을 바탕으로 최대한 사용자 질문에 답변해주세요.
 
-      Important Notes:
-      1. Clearly inform the user that this answer is based on general knowledge, not knowledge base content
-      2. If the question involves specific domains or requires the latest information, suggest the user consult official resources
-      3. Maintain accuracy and objectivity in the response
-      4. IMPORTANT: Always respond in the same language as the user's question
+      주의사항:
+      1. 이것이 일반 지식 기반 답변이며 지식베이스 콘텐츠가 아님을 사용자에게 명확히 알립니다
+      2. 질문이 특정 분야나 최신 정보를 필요로 하는 경우 공식 자료를 참조하도록 제안합니다
+      3. 답변의 정확성과 객관성을 유지합니다
 
-      User question: {{query}}
+      사용자 질문: {{query}}

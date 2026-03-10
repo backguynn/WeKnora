@@ -356,9 +356,9 @@ func (c *Client) SearchFAQEntries(ctx context.Context,
 
 // ExportFAQEntries exports all FAQ entries from a knowledge base as CSV data.
 // The CSV format matches the import example format with 8 columns:
-// 分类(必填), 问题(必填), 相似问题(选填-多个用##分隔), 反例问题(选填-多个用##分隔),
-// 机器人回答(必填-多个用##分隔), 是否全部回复(选填-默认FALSE), 是否停用(选填-默认FALSE),
-// 是否禁止被推荐(选填-默认False 可被推荐)
+// 분류(필수), 질문(필수), 유사 질문(선택-여러 개는 ##로 구분), 반례 질문(선택-여러 개는 ##로 구분),
+// 봇 답변(필수-여러 개는 ##로 구분), 전체 답변 여부(선택-기본 FALSE), 비활성화 여부(선택-기본 FALSE),
+// 추천 금지 여부(선택-기본 False, 추천 가능)
 func (c *Client) ExportFAQEntries(ctx context.Context, knowledgeBaseID string) ([]byte, error) {
 	path := fmt.Sprintf("/api/v1/knowledge-bases/%s/faq/entries/export", knowledgeBaseID)
 	resp, err := c.doRequest(ctx, http.MethodGet, path, nil, nil)
@@ -401,24 +401,24 @@ type FAQSuccessEntry struct {
 // FAQImportProgress represents the progress of an async FAQ import task.
 // When Status is "completed", the result fields (SkippedCount, ImportMode, ImportedAt, DisplayStatus, ProcessingTime) are populated.
 type FAQImportProgress struct {
-	TaskID           string           `json:"task_id"`
-	KBID             string           `json:"kb_id"`
-	KnowledgeID      string           `json:"knowledge_id"`
-	Status           string           `json:"status"`
-	Progress         int              `json:"progress"`
-	Total            int              `json:"total"`
-	Processed        int              `json:"processed"`
-	SuccessCount     int              `json:"success_count"`
-	FailedCount      int              `json:"failed_count"`
-	SkippedCount     int              `json:"skipped_count,omitempty"`
+	TaskID           string            `json:"task_id"`
+	KBID             string            `json:"kb_id"`
+	KnowledgeID      string            `json:"knowledge_id"`
+	Status           string            `json:"status"`
+	Progress         int               `json:"progress"`
+	Total            int               `json:"total"`
+	Processed        int               `json:"processed"`
+	SuccessCount     int               `json:"success_count"`
+	FailedCount      int               `json:"failed_count"`
+	SkippedCount     int               `json:"skipped_count,omitempty"`
 	FailedEntries    []FAQFailedEntry  `json:"failed_entries,omitempty"`
-	SuccessEntries   []FAQSuccessEntry `json:"success_entries,omitempty"`   // Successfully imported entries (when count is small)
+	SuccessEntries   []FAQSuccessEntry `json:"success_entries,omitempty"`    // Successfully imported entries (when count is small)
 	FailedEntriesURL string            `json:"failed_entries_url,omitempty"` // CSV download URL when too many failures
-	Message          string           `json:"message"`
-	Error            string           `json:"error,omitempty"`
-	CreatedAt        int64            `json:"created_at"`
-	UpdatedAt        int64            `json:"updated_at"`
-	DryRun           bool             `json:"dry_run,omitempty"` // Whether this is a dry run validation
+	Message          string            `json:"message"`
+	Error            string            `json:"error,omitempty"`
+	CreatedAt        int64             `json:"created_at"`
+	UpdatedAt        int64             `json:"updated_at"`
+	DryRun           bool              `json:"dry_run,omitempty"` // Whether this is a dry run validation
 
 	// Result fields (populated when Status == "completed")
 	ImportMode     string    `json:"import_mode,omitempty"`

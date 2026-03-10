@@ -1,67 +1,65 @@
-# Context templates
+# 컨텍스트 템플릿
 templates:
   - id: "default_context"
-    name: "Standard Template"
-    description: "Standard context formatting template"
+    name: "표준 템플릿"
+    description: "표준 컨텍스트 서식 템플릿"
     has_knowledge_base: true
     content: |
-      Answer the user's question based on the following reference materials. IMPORTANT: Always respond in the same language as the user's question.
+      아래 참고 자료를 바탕으로 사용자 질문에 답하세요.
 
-      Reference materials:
+      참고 자료:
       {{contexts}}
 
-      User question: {{query}}
+      사용자 질문: {{query}}
 
-      Please answer based on the above reference materials. If the materials are insufficient to answer the question, clearly state so.
+      위 참고 자료를 바탕으로 답하세요. 참고 자료가 부족하면 명확히 알려 주세요.
 
   - id: "detailed_context"
-    name: "Detailed Template"
-    description: "Context template with detailed instructions"
+    name: "상세 템플릿"
+    description: "상세 설명이 포함된 컨텍스트 템플릿"
     has_knowledge_base: true
     content: |
-      ## Task Description
-      Answer the user's question accurately and comprehensively based on the provided reference materials.
+      ## 작업 설명
+      제공된 참고 자료를 바탕으로 정확하고 포괄적으로 답변하세요.
 
-      ## Reference Materials
+      ## 참고 자료
       {{contexts}}
 
-      ## User Question
+      ## 사용자 질문
       {{query}}
 
-      ## Response Requirements
-      1. Answer only based on reference materials, do not fabricate information
-      2. If multiple materials conflict, provide a comprehensive analysis
-      3. Cite sources appropriately to enhance credibility
-      4. If materials are insufficient, clearly state so
-      5. IMPORTANT: Always respond in the same language as the user's question
+      ## 답변 요구 사항
+      1. 참고 자료만으로 답하고 정보를 지어내지 마세요
+      2. 여러 자료가 충돌하면 종합적으로 분석하세요
+      3. 출처를 적절히 인용해 신뢰도를 높이세요
+      4. 자료가 부족하면 명확히 알려 주세요
 
-      Current time: {{current_time}} {{current_week}}
+      현재 시간: {{current_time}} {{current_week}}
 
   - id: "simple_context"
-    name: "Simple Template"
-    description: "Simple context template"
+    name: "간결 템플릿"
+    description: "간결한 컨텍스트 템플릿"
     has_knowledge_base: true
     content: |
-      Reference materials:
+      참고 자료:
       {{contexts}}
 
-      Question: {{query}}
+      질문: {{query}}
 
-      Please answer the above question. IMPORTANT: Respond in the same language as the question.
+      위 질문에 답하세요.
 
   - id: "qa_context"
-    name: "Q&A Template"
-    description: "Template specialized for Q&A scenarios"
+    name: "Q&A 템플릿"
+    description: "Q&A 시나리오 전용 템플릿"
     has_knowledge_base: true
     content: |
-      You need to answer a question. Below are potentially relevant materials:
+      질문에 답해야 합니다. 다음은 관련될 수 있는 자료입니다:
 
       {{contexts}}
 
-      The user's question is: {{query}}
+      사용자 질문: {{query}}
 
-      Please answer the question based on the above materials. Requirements:
-      - Answer the question directly, do not repeat the question
-      - If the materials do not contain relevant information, state so
-      - Keep the answer concise and accurate
-      - IMPORTANT: Always respond in the same language as the user's question
+      위 자료를 바탕으로 답하세요. 답변 요구 사항:
+      - 질문에 바로 답하고 질문을 반복하지 마세요
+      - 자료에 관련 정보가 없으면 알려 주세요
+      - 답변은 간결하고 정확하게 유지하세요

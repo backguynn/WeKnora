@@ -1,81 +1,81 @@
-# WeKnora API 文档
+# WeKnora API 문서
 
-## 目录
+## 목차
 
-- [概述](#概述)
-- [基础信息](#基础信息)
-- [认证机制](#认证机制)
-- [错误处理](#错误处理)
-- [API 概览](#api-概览)
+- [개요](#개요)
+- [기본 정보](#기본-정보)
+- [인증 방식](#인증-방식)
+- [오류 처리](#오류-처리)
+- [API 개요](#api-개요)
 
-## 概述
+## 개요
 
-WeKnora 提供了一系列 RESTful API，用于创建和管理知识库、检索知识，以及进行基于知识的问答。本文档详细描述了这些 API 的使用方式。
+WeKnora는 지식베이스 생성/관리, 지식 검색, 지식 기반 Q&A를 위한 RESTful API를 제공합니다. 이 문서는 해당 API의 사용 방법을 상세히 설명합니다.
 
-## 基础信息
+## 기본 정보
 
-- **基础 URL**: `/api/v1`
-- **响应格式**: JSON
-- **认证方式**: API Key
+- **기본 URL**: `/api/v1`
+- **응답 형식**: JSON
+- **인증 방식**: API Key
 
-## 认证机制
+## 인증 방식
 
-所有 API 请求需要在 HTTP 请求头中包含 `X-API-Key` 进行身份认证：
+모든 API 요청은 HTTP 요청 헤더에 `X-API-Key`를 포함하여 인증해야 합니다:
 
 ```
 X-API-Key: your_api_key
 ```
 
-为便于问题追踪和调试，建议每个请求的 HTTP 请求头中添加 `X-Request-ID`：
+문제 추적과 디버깅을 위해 각 요청의 HTTP 헤더에 `X-Request-ID`를 추가하는 것을 권장합니다:
 
 ```
 X-Request-ID: unique_request_id
 ```
 
-### 获取 API Key
+### API Key 발급
 
-在 web 页面完成账户注册后，请前往账户信息页面获取您的 API Key。
+web 페이지에서 계정 등록을 완료한 후, 계정 정보 페이지에서 API Key를 확인하세요.
 
-请妥善保管您的 API Key，避免泄露。API Key 代表您的账户身份，拥有完整的 API 访问权限。
+API Key는 계정 식별 정보이므로 유출되지 않도록 안전하게 보관하세요. API Key는 전체 API 접근 권한을 가집니다.
 
-## 错误处理
+## 오류 처리
 
-所有 API 使用标准的 HTTP 状态码表示请求状态，并返回统一的错误响应格式：
+모든 API는 표준 HTTP 상태 코드로 요청 상태를 표현하며, 통일된 오류 응답 형식을 반환합니다:
 
 ```json
 {
   "success": false,
   "error": {
-    "code": "错误代码",
-    "message": "错误信息",
-    "details": "错误详情"
+    "code": "오류 코드",
+    "message": "오류 메시지",
+    "details": "오류 상세"
   }
 }
 ```
 
-## API 概览
+## API 개요
 
-WeKnora API 按功能分为以下几类：
+WeKnora API는 기능별로 다음과 같이 분류됩니다:
 
-| 分类 | 描述 | 文档链接 |
+| 분류 | 설명 | 문서 링크 |
 |------|------|----------|
-| 认证管理 | 用户注册、登录、令牌管理 | [auth.md](./auth.md) |
-| 租户管理 | 创建和管理租户账户 | [tenant.md](./tenant.md) |
-| 知识库管理 | 创建、查询和管理知识库 | [knowledge-base.md](./knowledge-base.md) |
-| 知识管理 | 上传、检索和管理知识内容 | [knowledge.md](./knowledge.md) |
-| 模型管理 | 配置和管理各种AI模型 | [model.md](./model.md) |
-| 分块管理 | 管理知识的分块内容 | [chunk.md](./chunk.md) |
-| 标签管理 | 管理知识库的标签分类 | [tag.md](./tag.md) |
-| FAQ管理 | 管理FAQ问答对 | [faq.md](./faq.md) |
-| 智能体管理 | 创建和管理自定义智能体 | [agent.md](./agent.md) |
-| 会话管理 | 创建和管理对话会话 | [session.md](./session.md) |
-| 知识搜索 | 在知识库中搜索内容 | [knowledge-search.md](./knowledge-search.md) |
-| 聊天功能 | 基于知识库和 Agent 进行问答 | [chat.md](./chat.md) |
-| 消息管理 | 获取和管理对话消息 | [message.md](./message.md) |
-| 评估功能 | 评估模型性能 | [evaluation.md](./evaluation.md) |
-| 初始化管理 | 知识库模型配置与 Ollama 管理 | [initialization.md](./initialization.md) |
-| 系统管理 | 系统信息、解析引擎、存储引擎 | [system.md](./system.md) |
-| MCP 服务 | MCP 工具服务管理 | [mcp-service.md](./mcp-service.md) |
-| 组织管理 | 组织、成员、知识库/智能体共享 | [organization.md](./organization.md) |
-| Skills | 预装智能体技能 | [skill.md](./skill.md) |
-| 网络搜索 | 网络搜索服务商 | [web-search.md](./web-search.md) |
+| 인증 관리 | 사용자 등록, 로그인, 토큰 관리 | [auth.md](./auth.md) |
+| 테넌트 관리 | 테넌트 계정 생성 및 관리 | [tenant.md](./tenant.md) |
+| 지식베이스 관리 | 지식베이스 생성, 조회, 관리 | [knowledge-base.md](./knowledge-base.md) |
+| 지식 관리 | 지식 콘텐츠 업로드, 검색, 관리 | [knowledge.md](./knowledge.md) |
+| 모델 관리 | 다양한 AI 모델 설정 및 관리 | [model.md](./model.md) |
+| 청크 관리 | 지식 청크 콘텐츠 관리 | [chunk.md](./chunk.md) |
+| 태그 관리 | 지식베이스 태그 분류 관리 | [tag.md](./tag.md) |
+| FAQ 관리 | FAQ Q&A 쌍 관리 | [faq.md](./faq.md) |
+| 에이전트 관리 | 커스텀 에이전트 생성 및 관리 | [agent.md](./agent.md) |
+| 세션 관리 | 대화 세션 생성 및 관리 | [session.md](./session.md) |
+| 지식 검색 | 지식베이스 내 콘텐츠 검색 | [knowledge-search.md](./knowledge-search.md) |
+| 채팅 기능 | 지식베이스와 Agent 기반 Q&A | [chat.md](./chat.md) |
+| 메시지 관리 | 대화 메시지 조회 및 관리 | [message.md](./message.md) |
+| 평가 기능 | 모델 성능 평가 | [evaluation.md](./evaluation.md) |
+| 초기화 관리 | 지식베이스 모델 설정 및 Ollama 관리 | [initialization.md](./initialization.md) |
+| 시스템 관리 | 시스템 정보, 파싱 엔진, 스토리지 엔진 | [system.md](./system.md) |
+| MCP 서비스 | MCP 툴 서비스 관리 | [mcp-service.md](./mcp-service.md) |
+| 조직 관리 | 조직, 멤버, 지식베이스/에이전트 공유 | [organization.md](./organization.md) |
+| Skills | 사전 설치된 에이전트 스킬 | [skill.md](./skill.md) |
+| 웹 검색 | 웹 검색 서비스 제공업체 | [web-search.md](./web-search.md) |
