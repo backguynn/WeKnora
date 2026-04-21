@@ -2,7 +2,6 @@ package chat
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"strings"
 )
@@ -48,6 +47,12 @@ func (r *SSEReader) ReadEvent() (*SSEEvent, error) {
 			return &SSEEvent{Data: []byte(jsonStr)}, nil
 		}
 
+		// 增强兼容性(data:后面没有紧接着一个空格)
+		if strings.HasPrefix(line, "data:") {
+			jsonStr := line[5:]
+			return &SSEEvent{Data: []byte(jsonStr)}, nil
+		}
+
 		// 其他行（如 event:, id: 等）跳过
 	}
 
@@ -55,5 +60,5 @@ func (r *SSEReader) ReadEvent() (*SSEEvent, error) {
 		return nil, err
 	}
 
-	return nil, errors.New("EOF")
+	return nil, io.EOF
 }

@@ -95,6 +95,12 @@ type ImageInfo struct {
 	OCRText string `json:"ocr_text"`
 }
 
+// VideoInfo 表示与 Chunk 关联的视频信息
+type VideoInfo struct {
+	// 视频URL
+	URL string `json:"url"          gorm:"type:text"`
+}
+
 // Chunk represents a document chunk
 // Chunks are meaningful text segments extracted from original documents
 // and are the basic units of knowledge base retrieval
@@ -147,10 +153,43 @@ type Chunk struct {
 	ContentHash string `json:"content_hash"             gorm:"type:varchar(64);index"`
 	// 图片信息，存储为 JSON
 	ImageInfo string `json:"image_info"               gorm:"type:text"`
+	// 视频信息，存储为 JSON
+	VideoInfo string `json:"video_info"               gorm:"type:text"`
 	// Chunk creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Chunk last update time
 	UpdatedAt time.Time `json:"updated_at"`
 	// Soft delete marker, supports data recovery
 	DeletedAt gorm.DeletedAt `json:"deleted_at"               gorm:"index"`
+}
+
+// AssignChunkSeqIDs assigns sequential SeqIDs to a batch of chunks that have SeqID == 0.
+// Must be called before CreateInBatches for SQLite compatibility.
+func AssignChunkSeqIDs(tx *gorm.DB, chunks []*Chunk) error {
+	needAssign := false
+	for _, c := range chunks {
+		if c.SeqID == 0 {
+			needAssign = true
+			break
+		}
+	}
+	if !needAssign {
+		return nil
+	}
+
+	var maxSeqID *int64
+	if err := tx.Unscoped().Model(&Chunk{}).Select("MAX(seq_id)").Scan(&maxSeqID).Error; err != nil {
+		return err
+	}
+	next := int64(1)
+	if maxSeqID != nil {
+		next = *maxSeqID + 1
+	}
+	for _, c := range chunks {
+		if c.SeqID == 0 {
+			c.SeqID = next
+			next++
+		}
+	}
+	return nil
 }

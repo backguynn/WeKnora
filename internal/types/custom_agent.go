@@ -65,10 +65,16 @@ type CustomAgentConfig struct {
 	// ===== Basic Settings =====
 	// Agent mode: "quick-answer" for RAG mode, "smart-reasoning" for ReAct agent mode
 	AgentMode string `yaml:"agent_mode" json:"agent_mode"`
-	// System prompt for the agent (unified prompt, uses {{web_search_status}} placeholder for dynamic behavior)
+	// System prompt for the agent (unified prompt, uses web_search_status placeholder for dynamic behavior)
 	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
+	// SystemPromptID references a template ID in prompt_templates/ YAML files.
+	// If set and SystemPrompt is empty, the template content will be resolved at startup.
+	SystemPromptID string `yaml:"system_prompt_id" json:"system_prompt_id,omitempty"`
 	// Context template for normal mode (how to format retrieved chunks)
 	ContextTemplate string `yaml:"context_template" json:"context_template"`
+	// ContextTemplateID references a template ID in prompt_templates/ YAML files.
+	// If set and ContextTemplate is empty, the template content will be resolved at startup.
+	ContextTemplateID string `yaml:"context_template_id" json:"context_template_id,omitempty"`
 
 	// ===== Model Settings =====
 	// Model ID to use for conversations
@@ -85,10 +91,10 @@ type CustomAgentConfig struct {
 	// ===== Agent Mode Settings =====
 	// Maximum iterations for ReAct loop (only for agent type)
 	MaxIterations int `yaml:"max_iterations" json:"max_iterations"`
+	// Timeout for a single LLM call in seconds (0 = use global default)
+	LLMCallTimeout int `yaml:"llm_call_timeout" json:"llm_call_timeout,omitempty"`
 	// Allowed tools (only for agent type)
 	AllowedTools []string `yaml:"allowed_tools" json:"allowed_tools"`
-	// Whether reflection is enabled (only for agent type)
-	ReflectionEnabled bool `yaml:"reflection_enabled" json:"reflection_enabled"`
 	// MCP service selection mode: "all" = all enabled MCP services, "selected" = specific services, "none" = no MCP
 	MCPSelectionMode string `yaml:"mcp_selection_mode" json:"mcp_selection_mode"`
 	// Selected MCP service IDs (only used when MCPSelectionMode is "selected")
@@ -109,6 +115,19 @@ type CustomAgentConfig struct {
 	// When false, knowledge base retrieval happens according to KBSelectionMode
 	RetrieveKBOnlyWhenMentioned bool `yaml:"retrieve_kb_only_when_mentioned" json:"retrieve_kb_only_when_mentioned"`
 
+	// ===== Image Upload / Multimodal Settings =====
+	// Whether image upload is enabled for this agent (default: false)
+	ImageUploadEnabled bool `yaml:"image_upload_enabled" json:"image_upload_enabled"`
+	// VLM model ID for image analysis (optional, falls back to tenant-level VLM)
+	VLMModelID string `yaml:"vlm_model_id" json:"vlm_model_id"`
+	// Whether audio upload (ASR transcription) is enabled for this agent (default: false)
+	AudioUploadEnabled bool `yaml:"audio_upload_enabled" json:"audio_upload_enabled"`
+	// ASR model ID for audio transcription (optional)
+	ASRModelID string `yaml:"asr_model_id" json:"asr_model_id"`
+	// Storage provider for image uploads: "local", "minio", "cos", "tos"
+	// Empty means use the global/tenant default provider.
+	ImageStorageProvider string `yaml:"image_storage_provider" json:"image_storage_provider"`
+
 	// ===== File Type Restriction Settings =====
 	// Supported file types for this agent (e.g., ["csv", "xlsx", "xls"])
 	// Empty means all file types are supported
@@ -128,6 +147,13 @@ type CustomAgentConfig struct {
 	WebSearchEnabled bool `yaml:"web_search_enabled" json:"web_search_enabled"`
 	// Maximum web search results
 	WebSearchMaxResults int `yaml:"web_search_max_results" json:"web_search_max_results"`
+	// WebSearchProviderID references a specific WebSearchProviderEntity.
+	// If empty, the tenant's default provider (is_default=true) is used.
+	WebSearchProviderID string `yaml:"web_search_provider_id" json:"web_search_provider_id,omitempty"`
+	// Whether to auto-fetch full page content for reranked web search results
+	WebFetchEnabled bool `yaml:"web_fetch_enabled" json:"web_fetch_enabled"`
+	// Max number of pages to fetch after rerank (default: 3)
+	WebFetchTopN int `yaml:"web_fetch_top_n" json:"web_fetch_top_n,omitempty"`
 
 	// ===== Multi-turn Conversation Settings =====
 	// Whether multi-turn conversation is enabled
@@ -162,6 +188,10 @@ type CustomAgentConfig struct {
 	FallbackResponse string `yaml:"fallback_response" json:"fallback_response"`
 	// Fallback prompt (when FallbackStrategy is "model")
 	FallbackPrompt string `yaml:"fallback_prompt" json:"fallback_prompt"`
+
+	// ===== Suggested Prompts =====
+	// 프론트엔드 대화 패널에 빠른 질문으로 노출할 추천 질문 목록
+	SuggestedPrompts []string `yaml:"suggested_prompts" json:"suggested_prompts,omitempty"`
 }
 
 // Value implements driver.Valuer interface for CustomAgentConfig
@@ -174,8 +204,13 @@ func (c *CustomAgentConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
 		return nil
 	}
 	return json.Unmarshal(b, c)
@@ -191,7 +226,7 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a == nil {
 		return
 	}
-	if a.Config.Temperature == 0 {
+	if a.Config.Temperature < 0 {
 		a.Config.Temperature = 0.7
 	}
 	if a.Config.MaxIterations == 0 {
@@ -216,9 +251,6 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a.Config.RerankTopK == 0 {
 		a.Config.RerankTopK = 5
 	}
-	if a.Config.RerankThreshold == 0 {
-		a.Config.RerankThreshold = 0.5
-	}
 	// Advanced settings defaults
 	if a.Config.FallbackStrategy == "" {
 		a.Config.FallbackStrategy = "model"
@@ -237,181 +269,22 @@ func (a *CustomAgent) IsAgentMode() bool {
 	return a.Config.AgentMode == AgentModeSmartReasoning
 }
 
-// GetBuiltinQuickAnswerAgent returns the built-in quick answer (RAG) mode agent
-func GetBuiltinQuickAnswerAgent(tenantID uint64) *CustomAgent {
-	return &CustomAgent{
-		ID:          BuiltinQuickAnswerID,
-		Name:        "빠른 답변",
-		Description: "지식베이스 기반 RAG 답변, 빠르고 정확하게 질문에 답변합니다",
-		IsBuiltin:   true,
-		TenantID:    tenantID,
-		Config: CustomAgentConfig{
-			AgentMode:    AgentModeQuickAnswer,
-			SystemPrompt: "",
-			ContextTemplate: `다음 참고 자료를 바탕으로 사용자 질문에 답변하세요.
-
-참고 자료:
-{{contexts}}
-
-사용자 질문: {{query}}`,
-			Temperature:                 0.7,
-			MaxCompletionTokens:         2048,
-			WebSearchEnabled:            true,
-			WebSearchMaxResults:         5,
-			MultiTurnEnabled:            true,
-			HistoryTurns:                5,
-			KBSelectionMode:             "all",
-			RetrieveKBOnlyWhenMentioned: false, // Default: retrieve KB based on KBSelectionMode
-			// FAQ strategy
-			FAQPriorityEnabled:       true,
-			FAQDirectAnswerThreshold: 0.9,
-			FAQScoreBoost:            1.2,
-			// Retrieval strategy
-			EmbeddingTopK:    10,
-			KeywordThreshold: 0.3,
-			VectorThreshold:  0.5,
-			RerankTopK:       10,
-			RerankThreshold:  0.3,
-			// Advanced settings
-			EnableQueryExpansion: true,
-			EnableRewrite:        true,
-			FallbackStrategy:     "model",
-		},
-	}
+// SuggestedQuestion은 프론트엔드에 표시할 추천 질문 메타데이터입니다.
+type SuggestedQuestion struct {
+	// 질문 텍스트
+	Question string `json:"question"`
+	// 출처 유형: "faq", "document", "agent_config"
+	Source string `json:"source"`
+	// 출처 지식베이스 ID(faq/document 출처일 때만 값이 존재)
+	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
 }
 
-// GetBuiltinSmartReasoningAgent returns the built-in smart reasoning (ReAct) mode agent
-func GetBuiltinSmartReasoningAgent(tenantID uint64) *CustomAgent {
-	return &CustomAgent{
-		ID:          BuiltinSmartReasoningID,
-		Name:        "스마트 추론",
-		Description: "ReAct 추론 프레임워크, 다단계 사고 및 도구 호출 지원",
-		IsBuiltin:   true,
-		TenantID:    tenantID,
-		Config: CustomAgentConfig{
-			AgentMode:                   AgentModeSmartReasoning,
-			SystemPrompt:                "",
-			Temperature:                 0.7,
-			MaxCompletionTokens:         2048,
-			MaxIterations:               50,
-			KBSelectionMode:             "all",
-			RetrieveKBOnlyWhenMentioned: false, // Default: retrieve KB based on KBSelectionMode
-			AllowedTools:                []string{"thinking", "todo_write", "knowledge_search", "grep_chunks", "list_knowledge_chunks", "query_knowledge_graph", "get_document_info"},
-			WebSearchEnabled:            true,
-			WebSearchMaxResults:         5,
-			ReflectionEnabled:           false,
-			MultiTurnEnabled:            true,
-			HistoryTurns:                5,
-			// FAQ strategy
-			FAQPriorityEnabled:       true,
-			FAQDirectAnswerThreshold: 0.9,
-			FAQScoreBoost:            1.2,
-			// Retrieval strategy
-			EmbeddingTopK:    10,
-			KeywordThreshold: 0.3,
-			VectorThreshold:  0.5,
-			RerankTopK:       10,
-			RerankThreshold:  0.3,
-		},
-	}
-}
+// BuiltinAgentRegistry는 내장 에이전트 레지스트리입니다.
+// 시작 시 LoadBuiltinAgentsConfig가 config/builtin_agents.yaml을 읽어
+// rebuildRegistryFromConfig를 통해 채워집니다.
+var BuiltinAgentRegistry = map[string]func(uint64) *CustomAgent{}
 
-// GetBuiltinDataAnalystAgent returns the built-in data analyst agent
-// This agent specializes in analyzing CSV/Excel data using SQL queries via DuckDB
-func GetBuiltinDataAnalystAgent(tenantID uint64) *CustomAgent {
-	return &CustomAgent{
-		ID:          BuiltinDataAnalystID,
-		Name:        "데이터 분석가",
-		Description: "전문 데이터 분석 에이전트, CSV/Excel 파일의 SQL 쿼리 및 통계 분석 지원",
-		Avatar:      "📊",
-		IsBuiltin:   true,
-		TenantID:    tenantID,
-		Config: CustomAgentConfig{
-			AgentMode: AgentModeSmartReasoning,
-			SystemPrompt: `### Role
-You are WeKnora Data Analyst, an intelligent data analysis assistant powered by DuckDB. You specialize in analyzing structured data from CSV and Excel files using SQL queries.
-
-### Mission
-Help users explore, analyze, and derive insights from their tabular data through intelligent SQL query generation and execution.
-
-### Critical Constraints
-1. **Schema First:** ALWAYS call data_schema before writing any SQL query to understand the table structure.
-2. **Read-Only:** Only SELECT queries allowed. INSERT, UPDATE, DELETE, CREATE, DROP are forbidden.
-3. **Iterative Refinement:** If a query fails, analyze the error and refine your approach.
-
-### Workflow
-1. **Understand:** Call data_schema to get table name, columns, types, and row count.
-2. **Plan:** For complex questions, use todo_write to break into sub-queries.
-3. **Query:** Call data_analysis with the knowledge_id and SQL query.
-4. **Analyze:** Interpret results and provide insights.
-
-### SQL Best Practices for DuckDB
-- Use double quotes for identifiers: SELECT "Column Name" FROM "table_name"
-- Aggregate functions: COUNT(*), SUM(), AVG(), MIN(), MAX(), MEDIAN(), STDDEV()
-- String matching: LIKE, ILIKE (case-insensitive), REGEXP
-- Use LIMIT to prevent overwhelming output (default to 100 rows max)
-
-### Tool Guidelines
-- **data_schema:** ALWAYS use first. Required before any query.
-- **data_analysis:** Execute SQL queries. Only SELECT queries allowed.
-- **thinking:** Plan complex analyses, debug query issues.
-- **todo_write:** Track multi-step analysis tasks.
-
-### Output Standards
-- Present results in well-formatted tables or summaries
-- Provide actionable insights, not just raw numbers
-- Relate findings back to the user's original question
-
-Current Time: {{current_time}}
-`,
-			Temperature:                 0.3, // Lower temperature for precise SQL generation
-			MaxCompletionTokens:         4096,
-			MaxIterations:               30,
-			KBSelectionMode:             "all",
-			RetrieveKBOnlyWhenMentioned: false, // Default: retrieve KB based on KBSelectionMode
-			// Only support CSV and Excel files for data analysis
-			// Use standard values (xlsx), backend will auto-include xls via alias
-			SupportedFileTypes: []string{"csv", "xlsx"},
-			// Core tools for data analysis
-			AllowedTools: []string{
-				"thinking",
-				"todo_write",
-				"data_schema",   // Get table schema information
-				"data_analysis", // Execute SQL queries on data
-			},
-			WebSearchEnabled:    false, // Data analysis doesn't need web search
-			WebSearchMaxResults: 0,
-			ReflectionEnabled:   true, // Enable reflection for query optimization
-			MultiTurnEnabled:    true,
-			HistoryTurns:        10, // More history for iterative analysis
-			// Retrieval strategy (minimal, as we focus on data tools)
-			EmbeddingTopK:    5,
-			KeywordThreshold: 0.3,
-			VectorThreshold:  0.5,
-			RerankTopK:       5,
-			RerankThreshold:  0.3,
-		},
-	}
-}
-
-// Deprecated: Use GetBuiltinQuickAnswerAgent instead
-func GetBuiltinNormalAgent(tenantID uint64) *CustomAgent {
-	return GetBuiltinQuickAnswerAgent(tenantID)
-}
-
-// Deprecated: Use GetBuiltinSmartReasoningAgent instead
-func GetBuiltinAgentAgent(tenantID uint64) *CustomAgent {
-	return GetBuiltinSmartReasoningAgent(tenantID)
-}
-
-// BuiltinAgentRegistry provides a registry of all built-in agents for easy extension
-var BuiltinAgentRegistry = map[string]func(uint64) *CustomAgent{
-	BuiltinQuickAnswerID:    GetBuiltinQuickAnswerAgent,
-	BuiltinSmartReasoningID: GetBuiltinSmartReasoningAgent,
-	BuiltinDataAnalystID:    GetBuiltinDataAnalystAgent,
-}
-
-// builtinAgentIDsOrdered defines the fixed display order of built-in agents
+// builtinAgentIDsOrdered는 내장 에이전트의 고정 표시 순서를 정의합니다.
 var builtinAgentIDsOrdered = []string{
 	BuiltinQuickAnswerID,
 	BuiltinSmartReasoningID,
@@ -421,18 +294,18 @@ var builtinAgentIDsOrdered = []string{
 	BuiltinDocumentAssistantID,
 }
 
-// GetBuiltinAgentIDs returns all built-in agent IDs in fixed order
+// GetBuiltinAgentIDs는 고정 순서의 모든 내장 에이전트 ID를 반환합니다.
 func GetBuiltinAgentIDs() []string {
 	return builtinAgentIDsOrdered
 }
 
-// IsBuiltinAgentID checks if the given ID is a built-in agent ID
+// IsBuiltinAgentID는 주어진 ID가 내장 에이전트인지 확인합니다.
 func IsBuiltinAgentID(id string) bool {
 	_, exists := BuiltinAgentRegistry[id]
 	return exists
 }
 
-// GetBuiltinAgent returns a built-in agent by ID, or nil if not found
+// GetBuiltinAgent는 ID로 내장 에이전트를 조회하고, 없으면 nil을 반환합니다.
 func GetBuiltinAgent(id string, tenantID uint64) *CustomAgent {
 	if factory, exists := BuiltinAgentRegistry[id]; exists {
 		return factory(tenantID)

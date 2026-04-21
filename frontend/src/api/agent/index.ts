@@ -5,7 +5,9 @@ export interface CustomAgentConfig {
   // ===== 基础设置 =====
   agent_mode?: 'quick-answer' | 'smart-reasoning';  // 运行模式：quick-answer=RAG模式, smart-reasoning=ReAct Agent模式
   system_prompt?: string;           // 统一系统提示词（使用 {{web_search_status}} 占位符动态控制行为）
+  system_prompt_id?: string;
   context_template?: string;        // 上下文模板（普通模式）
+  context_template_id?: string;
 
   // ===== 模型设置 =====
   model_id?: string;
@@ -15,6 +17,7 @@ export interface CustomAgentConfig {
 
   // ===== Agent模式设置 =====
   max_iterations?: number;          // 最大迭代次数
+  llm_call_timeout?: number;
   allowed_tools?: string[];         // 允许的工具
   reflection_enabled?: boolean;     // 是否启用反思
   // MCP服务选择模式：all=全部启用的MCP服务, selected=指定服务, none=不使用MCP
@@ -35,6 +38,13 @@ export interface CustomAgentConfig {
   // false: 根据 kb_selection_mode 自动检索知识库
   retrieve_kb_only_when_mentioned?: boolean;
 
+  // ===== 图片上传/多模态设置 =====
+  image_upload_enabled?: boolean;    // 是否启用图片上传（默认: false）
+  vlm_model_id?: string;            // VLM模型ID（图片分析用）
+  image_storage_provider?: string;   // 图片存储提供商
+  audio_upload_enabled?: boolean;    // 是否启用音频上传/ASR转录（默认: false）
+  asr_model_id?: string;            // ASR模型ID（音频转录用）
+
   // ===== 文件类型限制 =====
   // 支持的文件类型（如 ["csv", "xlsx", "xls"]）
   // 为空表示支持所有文件类型
@@ -42,11 +52,19 @@ export interface CustomAgentConfig {
 
   // ===== 网络搜索设置 =====
   web_search_enabled?: boolean;
+  web_search_provider_id?: string;
   web_search_max_results?: number;
+  web_fetch_enabled?: boolean;
+  web_fetch_top_n?: number;
 
   // ===== 多轮对话设置 =====
   multi_turn_enabled?: boolean;     // 是否启用多轮对话
   history_turns?: number;           // 保留历史轮数
+
+  // ===== FAQ策略设置 =====
+  faq_priority_enabled?: boolean;
+  faq_direct_answer_threshold?: number;
+  faq_score_boost?: number;
 
   // ===== 检索策略设置 =====
   embedding_top_k?: number;         // 向量召回TopK
@@ -169,4 +187,89 @@ export interface PlaceholdersResponse {
 // 获取占位符定义
 export function getPlaceholders() {
   return get<{ data: PlaceholdersResponse }>('/api/v1/agents/placeholders');
+}
+
+// ===== IM渠道 =====
+
+export interface IMChannel {
+  id: string;
+  tenant_id?: number;
+  agent_id: string;
+  platform: 'wecom' | 'feishu' | 'slack' | 'telegram' | 'dingtalk' | 'mattermost' | 'wechat';
+  name: string;
+  enabled: boolean;
+  mode: 'webhook' | 'websocket' | 'longpoll';
+  output_mode: 'stream' | 'full';
+  session_mode?: 'user' | 'thread';
+  knowledge_base_id?: string;
+  credentials: Record<string, any>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export function listIMChannels(agentId: string) {
+  return get<{ data: IMChannel[] }>(`/api/v1/agents/${agentId}/im-channels`);
+}
+
+export function createIMChannel(agentId: string, data: Partial<IMChannel>) {
+  return post<{ data: IMChannel }>(`/api/v1/agents/${agentId}/im-channels`, data);
+}
+
+export function updateIMChannel(id: string, data: Partial<IMChannel>) {
+  return put<{ data: IMChannel }>(`/api/v1/im-channels/${id}`, data);
+}
+
+export function deleteIMChannel(id: string) {
+  return del<{ success: boolean }>(`/api/v1/im-channels/${id}`);
+}
+
+export function toggleIMChannel(id: string) {
+  return post<{ data: IMChannel }>(`/api/v1/im-channels/${id}/toggle`);
+}
+
+// ===== 推荐问题 =====
+
+// 推荐问题
+export interface SuggestedQuestion {
+  question: string;
+  source: 'faq' | 'document' | 'agent_config';
+  knowledge_base_id?: string;
+}
+
+// 获取智能体推荐问题
+// 根据智能体关联的知识库范围返回推荐问题，用于前端对话面板快捷提问
+export function getSuggestedQuestions(
+  agentId: string,
+  params?: { knowledge_base_ids?: string[]; knowledge_ids?: string[]; limit?: number }
+) {
+  const query = new URLSearchParams();
+  if (params?.knowledge_base_ids?.length) query.set('knowledge_base_ids', params.knowledge_base_ids.join(','));
+  if (params?.knowledge_ids?.length) query.set('knowledge_ids', params.knowledge_ids.join(','));
+  if (params?.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return get<{ data: { questions: SuggestedQuestion[] } }>(`/api/v1/agents/${agentId}/suggested-questions${qs ? '?' + qs : ''}`);
+}
+// ===== WeChat QR Code Login =====
+
+export interface WeChatQRCodeResult {
+  qrcode_url: string;
+  qrcode: string;
+}
+
+export interface WeChatQRCodeStatus {
+  status: 'wait' | 'scaned' | 'confirmed' | 'expired';
+  credentials?: {
+    bot_token: string;
+    ilink_bot_id: string;
+    ilink_user_id: string;
+  };
+  baseurl?: string;
+}
+
+export function getWeChatQRCode() {
+  return post<{ data: WeChatQRCodeResult }>('/api/v1/wechat/qrcode');
+}
+
+export function pollWeChatQRCodeStatus(qrcode: string) {
+  return post<{ data: WeChatQRCodeStatus }>('/api/v1/wechat/qrcode/status', { qrcode });
 }

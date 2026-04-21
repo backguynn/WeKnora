@@ -31,34 +31,39 @@ import (
 type RouterParams struct {
 	dig.In
 
-	Config                *config.Config
-	UserService           interfaces.UserService
-	KBService             interfaces.KnowledgeBaseService
-	KnowledgeService      interfaces.KnowledgeService
-	ChunkService          interfaces.ChunkService
-	SessionService        interfaces.SessionService
-	MessageService        interfaces.MessageService
-	ModelService          interfaces.ModelService
-	EvaluationService     interfaces.EvaluationService
-	KBHandler             *handler.KnowledgeBaseHandler
-	KnowledgeHandler      *handler.KnowledgeHandler
-	TenantHandler         *handler.TenantHandler
-	TenantService         interfaces.TenantService
-	ChunkHandler          *handler.ChunkHandler
-	SessionHandler        *session.Handler
-	MessageHandler        *handler.MessageHandler
-	ModelHandler          *handler.ModelHandler
-	EvaluationHandler     *handler.EvaluationHandler
-	AuthHandler           *handler.AuthHandler
-	InitializationHandler *handler.InitializationHandler
-	SystemHandler         *handler.SystemHandler
-	MCPServiceHandler     *handler.MCPServiceHandler
-	WebSearchHandler      *handler.WebSearchHandler
-	FAQHandler            *handler.FAQHandler
-	TagHandler            *handler.TagHandler
-	CustomAgentHandler    *handler.CustomAgentHandler
-	SkillHandler          *handler.SkillHandler
-	OrganizationHandler   *handler.OrganizationHandler
+	Config                   *config.Config
+	UserService              interfaces.UserService
+	KBService                interfaces.KnowledgeBaseService
+	KnowledgeService         interfaces.KnowledgeService
+	ChunkService             interfaces.ChunkService
+	SessionService           interfaces.SessionService
+	MessageService           interfaces.MessageService
+	ModelService             interfaces.ModelService
+	EvaluationService        interfaces.EvaluationService
+	KBHandler                *handler.KnowledgeBaseHandler
+	KnowledgeHandler         *handler.KnowledgeHandler
+	TenantHandler            *handler.TenantHandler
+	TenantService            interfaces.TenantService
+	ChunkHandler             *handler.ChunkHandler
+	SessionHandler           *session.Handler
+	MessageHandler           *handler.MessageHandler
+	ModelHandler             *handler.ModelHandler
+	EvaluationHandler        *handler.EvaluationHandler
+	AuthHandler              *handler.AuthHandler
+	InitializationHandler    *handler.InitializationHandler
+	SystemHandler            *handler.SystemHandler
+	MCPServiceHandler        *handler.MCPServiceHandler
+	WebSearchHandler         *handler.WebSearchHandler
+	WebSearchProviderHandler *handler.WebSearchProviderHandler
+	VectorStoreHandler       *handler.VectorStoreHandler
+	FAQHandler               *handler.FAQHandler
+	TagHandler               *handler.TagHandler
+	CustomAgentHandler       *handler.CustomAgentHandler
+	SkillHandler             *handler.SkillHandler
+	OrganizationHandler      *handler.OrganizationHandler
+	IMHandler                *handler.IMHandler
+	DataSourceHandler        *handler.DataSourceHandler
+	WeKnoraCloudHandler      *handler.WeKnoraCloudHandler
 }
 
 // NewRouter 创建新的路由
@@ -78,6 +83,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 基础中间件（不需要认证）
 	r.Use(middleware.RequestID())
+	r.Use(middleware.Language())
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.ErrorHandler())
@@ -102,6 +108,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	if handler.Edition == "lite" {
 		serveFrontendStatic(r)
 	}
+
+	// IM 回调路由（在认证中间件之前注册，使用各平台自身的签名验证）
+	RegisterIMRoutes(r, params.IMHandler)
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
@@ -131,9 +140,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSystemRoutes(v1, params.SystemHandler)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler)
+		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler)
+		RegisterVectorStoreRoutes(v1, params.VectorStoreHandler)
 		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler)
 		RegisterSkillRoutes(v1, params.SkillHandler)
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
+		RegisterIMChannelRoutes(v1, params.IMHandler)
+		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
+		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler)
 	}
 
 	return r
@@ -172,6 +186,8 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kb.POST("/manual", handler.CreateManualKnowledge)
 		// 获取知识库下的知识列表
 		kb.GET("", handler.ListKnowledge)
+		// 清空知识库下的所有知识
+		kb.DELETE("", handler.ClearKnowledgeBaseContents)
 	}
 
 	// 知识路由组
@@ -303,6 +319,7 @@ func RegisterSessionRoutes(r *gin.RouterGroup, handler *session.Handler) {
 		sessions.GET("", handler.GetSessionsByTenant)
 		sessions.PUT("/:id", handler.UpdateSession)
 		sessions.DELETE("/:id", handler.DeleteSession)
+		sessions.DELETE("/:id/messages", handler.ClearSessionMessages)
 		sessions.POST("/:session_id/generate_title", handler.GenerateTitle)
 		sessions.POST("/:session_id/stop", handler.StopSession)
 		// 继续接收活跃流
@@ -384,6 +401,10 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.POST("/auth/register", handler.Register)
 	r.POST("/auth/login", handler.Login)
+	r.POST("/auth/auto-setup", handler.AutoSetup)
+	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
+	r.GET("/auth/oidc/url", handler.GetOIDCAuthorizationURL)
+	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
 	r.POST("/auth/refresh", handler.RefreshToken)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
@@ -409,6 +430,7 @@ func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.Initializ
 	r.POST("/initialization/remote/check", handler.CheckRemoteModel)
 	r.POST("/initialization/embedding/test", handler.TestEmbeddingModel)
 	r.POST("/initialization/rerank/check", handler.CheckRerankModel)
+	r.POST("/initialization/asr/check", handler.CheckASRModel)
 	r.POST("/initialization/multimodal/test", handler.TestMultimodalFunction)
 
 	r.POST("/initialization/extract/text-relation", handler.ExtractTextRelations)
@@ -426,7 +448,6 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 		systemRoutes.POST("/docreader/reconnect", handler.ReconnectDocReader)
 		systemRoutes.GET("/storage-engine-status", handler.GetStorageEngineStatus)
 		systemRoutes.POST("/storage-engine-check", handler.CheckStorageEngine)
-		systemRoutes.GET("/minio/buckets", handler.ListMinioBuckets)
 	}
 }
 
@@ -463,6 +484,44 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 	}
 }
 
+// RegisterWebSearchProviderRoutes registers CRUD routes for web search provider configurations
+func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchProviderHandler) {
+	providers := r.Group("/web-search-providers")
+	{
+		// List available provider types (metadata for UI forms)
+		providers.GET("/types", h.ListProviderTypes)
+		// Test with raw credentials (no persistence)
+		providers.POST("/test", h.TestProviderRaw)
+		// CRUD
+		providers.POST("", h.CreateProvider)
+		providers.GET("", h.ListProviders)
+		providers.GET("/:id", h.GetProvider)
+		providers.PUT("/:id", h.UpdateProvider)
+		providers.DELETE("/:id", h.DeleteProvider)
+		// Test existing saved provider
+		providers.POST("/:id/test", h.TestProviderByID)
+	}
+}
+
+// RegisterVectorStoreRoutes registers CRUD routes for vector store configurations
+func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler) {
+	stores := r.Group("/vector-stores")
+	{
+		// List available engine types (metadata for UI forms)
+		stores.GET("/types", h.ListStoreTypes)
+		// Test with raw credentials (no persistence)
+		stores.POST("/test", h.TestStoreRaw)
+		// CRUD
+		stores.POST("", h.CreateStore)
+		stores.GET("", h.ListStores)
+		stores.GET("/:id", h.GetStore)
+		stores.PUT("/:id", h.UpdateStore)
+		stores.DELETE("/:id", h.DeleteStore)
+		// Test existing saved or env store
+		stores.POST("/:id/test", h.TestStoreByID)
+	}
+}
+
 // RegisterCustomAgentRoutes registers custom agent routes
 func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler) {
 	agents := r.Group("/agents")
@@ -482,6 +541,8 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		// Copy agent
 		agents.POST("/:id/copy", agentHandler.CopyAgent)
 	}
+	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
+	r.GET("/agents/:id/suggested-questions", agentHandler.GetSuggestedQuestions)
 }
 
 // RegisterSkillRoutes registers skill routes
@@ -576,6 +637,41 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 	r.POST("/shared-agents/disabled", orgHandler.SetSharedAgentDisabledByMe)
 }
 
+// RegisterIMRoutes registers IM callback routes.
+// These are registered BEFORE auth middleware since IM platforms use their own signature verification.
+func RegisterIMRoutes(r *gin.Engine, imHandler *handler.IMHandler) {
+	im := r.Group("/api/v1/im")
+	{
+		im.GET("/callback/:channel_id", imHandler.IMCallback)
+		im.POST("/callback/:channel_id", imHandler.IMCallback)
+	}
+}
+
+// RegisterIMChannelRoutes registers IM channel CRUD routes (requires authentication).
+func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler) {
+	// Channel CRUD under agents
+	agentChannels := r.Group("/agents/:id/im-channels")
+	{
+		agentChannels.POST("", imHandler.CreateIMChannel)
+		agentChannels.GET("", imHandler.ListIMChannels)
+	}
+
+	// Channel operations by channel ID
+	channels := r.Group("/im-channels")
+	{
+		channels.PUT("/:id", imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", imHandler.ToggleIMChannel)
+	}
+
+	// WeChat QR code login (requires authentication)
+	wechatGroup := r.Group("/wechat")
+	{
+		wechatGroup.POST("/qrcode", imHandler.WeChatGetQRCode)
+		wechatGroup.POST("/qrcode/status", imHandler.WeChatPollQRCodeStatus)
+	}
+}
+
 // serveFrontendStatic registers a middleware that serves the frontend SPA
 // from the ./web directory if it exists. Must be called BEFORE auth middleware
 // so static files are served without authentication.
@@ -641,6 +737,10 @@ func serveFiles(r *gin.Engine) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameter: file_path"})
 			return
 		}
+		if strings.Contains(filePath, "..") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+			return
+		}
 
 		provider := types.ParseProviderScheme(filePath)
 
@@ -693,4 +793,43 @@ func serveFiles(r *gin.Engine) {
 			logger.Warnf(context.Background(), "[Router] /files write response failed: %v", err)
 		}
 	})
+}
+
+// RegisterDataSourceRoutes 注册数据源相关的路由
+func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler) {
+	// Data source routes
+	ds := r.Group("/datasource")
+	{
+		// Get available connector types
+		ds.GET("/types", handler.GetAvailableConnectors)
+
+		// Validate credentials without persistence (for "Test Connection" button)
+		ds.POST("/validate-credentials", handler.ValidateCredentials)
+
+		// CRUD operations
+		ds.POST("", handler.CreateDataSource)
+		ds.GET("", handler.ListDataSources)
+		ds.GET("/:id", handler.GetDataSource)
+		ds.PUT("/:id", handler.UpdateDataSource)
+		ds.DELETE("/:id", handler.DeleteDataSource)
+
+		// Connection and resource management
+		ds.POST("/:id/validate", handler.ValidateConnection)
+		ds.GET("/:id/resources", handler.ListAvailableResources)
+
+		// Sync management
+		ds.POST("/:id/sync", handler.ManualSync)
+		ds.POST("/:id/pause", handler.PauseDataSource)
+		ds.POST("/:id/resume", handler.ResumeDataSource)
+
+		// Sync logs
+		ds.GET("/:id/logs", handler.GetSyncLogs)
+		ds.GET("/logs/:log_id", handler.GetSyncLog)
+	}
+}
+
+// RegisterWeKnoraCloudRoutes 注册 WeKnoraCloud 初始化路由
+func RegisterWeKnoraCloudRoutes(r *gin.RouterGroup, handler *handler.WeKnoraCloudHandler) {
+	r.POST("/weknoracloud/credentials", handler.SaveCredentials)
+	r.GET("/models/weknoracloud/status", handler.Status)
 }

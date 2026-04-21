@@ -33,7 +33,7 @@
                   <div class="action-header" @click="toggleEvent(event.event_id)">
                     <div class="action-title">
                       <img class="action-title-icon" :src="thinkingIcon" alt="" />
-                      <span class="action-name">{{ $t('agent.think') }}</span>
+                      <span v-if="isEventExpanded(event.event_id)" class="action-name">{{ $t('agent.think') }}</span>
                       <span v-if="getThinkingSummary(event) && !isEventExpanded(event.event_id)" class="action-summary">{{ getThinkingSummary(event) }}</span>
                     </div>
                     <div v-if="event.content" class="action-show-icon">
@@ -134,12 +134,7 @@
                           <div class="detail-output">{{ event.output }}</div>
                         </div>
                       </div>
-                      <div v-if="event.arguments && event.tool_name !== 'todo_write' && !event.display_type" class="tool-arguments-wrapper">
-                        <div class="arguments-header">
-                          <span class="arguments-label">{{ $t('agent.argumentsLabel') }}</span>
-                        </div>
-                        <pre class="detail-code">{{ formatJSON(event.arguments) }}</pre>
-                      </div>
+                      <!-- Raw arguments hidden for user-friendly display -->
                   </div>
                 </div>
               </div>
@@ -150,6 +145,7 @@
     </div>
 
     <!-- Event Stream (non-tree mode: before answer starts, or answer events) -->
+    <div ref="streamingStepsContainer" class="streaming-steps-container" :class="{ 'streaming-steps-constrained': !hasAnswerStarted && !isConversationDone }">
     <template v-for="(event, index) in displayEvents" :key="getEventKey(event, index)">
       <div v-if="event && event.type" class="event-item" :class="{ 'event-answer': event.type === 'answer' }">
 
@@ -296,34 +292,20 @@
                 </div>
               </div>
 
-              <div v-if="event.arguments && event.tool_name !== 'todo_write' && !event.display_type" class="tool-arguments-wrapper">
-                <div class="arguments-header">
-                  <span class="arguments-label">{{ $t('agent.argumentsLabel') }}</span>
-                </div>
-                <pre class="detail-code">{{ formatJSON(event.arguments) }}</pre>
-              </div>
+              <!-- Raw arguments hidden for user-friendly display -->
           </div>
         </div>
       </div>
       </div>
     </template>
-
-    <!-- Loading Indicator -->
+    <!-- Loading Indicator (inside container so it scrolls into view) -->
     <div v-if="!isConversationDone && eventStream.length > 0" class="loading-indicator">
-      <!-- 方案1: 三个跳动的圆点 -->
-      <!-- <div class="loading-dots">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div> -->
-      
-      <!-- 方案4: 打字机效果（注释掉，可替换使用） -->
       <div class="loading-typing">
         <span></span>
         <span></span>
         <span></span>
       </div>
-      
+    </div>
     </div>
   </div>
   <!-- 全局浮层：统一承载 Web/KB 的 hover 内容 -->
@@ -366,7 +348,7 @@ import { getChunkByIdOnly } from '@/api/knowledge-base';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
 import { useI18n } from 'vue-i18n';
-import { openMermaidFullscreen } from '@/utils/mermaidViewer';
+import i18n from '@/i18n';
 import { hydrateProtectedFileImages } from '@/utils/security';
 import {
   buildManualMarkdown,
@@ -375,7 +357,6 @@ import {
   replaceIncompleteImageWithPlaceholder,
 } from '@/utils/chatMessageShared';
 import {
-  bindMermaidFullscreenEvents,
   createMermaidCodeRenderer,
   ensureMermaidInitialized,
   renderMermaidInContainer,
@@ -435,16 +416,76 @@ const TOOL_NAME_KEYS: Record<string, string> = {
   todo_write: 'agentStream.tools.todoWrite',
   knowledge_graph_extract: 'agentStream.tools.knowledgeGraphExtract',
   thinking: 'agentStream.tools.thinking',
+  image_analysis: 'agentStream.tools.imageAnalysis',
+  query_knowledge_graph: 'agentStream.tools.queryKnowledgeGraph',
+  final_answer: 'agentStream.tools.finalAnswer',
+  read_skill: 'agentStream.tools.readSkill',
+  execute_skill_script: 'agentStream.tools.executeSkillScript',
+  data_analysis: 'agentStream.tools.dataAnalysis',
+  data_schema: 'agentStream.tools.dataSchema',
+  database_query: 'agentStream.tools.databaseQuery',
 };
 
 const getLocalizedToolName = (toolName?: string | null): string => {
   if (!toolName) return t('agent.toolFallback');
   const key = TOOL_NAME_KEYS[toolName];
-  return key ? t(key) : toolName;
+  if (key) return t(key);
+
+  // Format MCP tool names: "mcp_my_server_search_docs" → "My Server: search docs"
+  if (toolName.startsWith('mcp_')) {
+    return formatMCPToolName(toolName);
+  }
+
+  return toolName;
+};
+
+/**
+ * Format MCP tool name for friendly display.
+ * Input:  "mcp_{service_name}_{tool_name}" (all lowercase, underscores)
+ * Output: "Service Name: tool name"
+ */
+const formatMCPToolName = (rawName: string): string => {
+  // Strip "mcp_" prefix
+  const rest = rawName.slice(4);
+
+  // Try to find the tool's original name from the event's tool_data or description.
+  // Since we only have the sanitized composite name, split heuristically:
+  // The service name comes first, tool name second, separated by "_".
+  // We look for common MCP tool name patterns at the end.
+  const parts = rest.split('_');
+  if (parts.length <= 1) return rest;
+
+  // Heuristic: tool names from MCP servers are typically 1-3 words like
+  // "search", "get_weather", "list_bugs". We try to find a reasonable split.
+  // For now, treat everything as a readable phrase.
+  const humanized = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  return humanized;
+};
+
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const ID_LABEL_RE = /\b(knowledge_base_id|knowledge_id|chunk_id|knowledge_base_ids)\s*[:=]\s*/gi;
+
+const sanitizeForDisplay = (text: string): string => {
+  if (!text) return text;
+  let result = text;
+  for (const [name, i18nKey] of Object.entries(TOOL_NAME_KEYS)) {
+    result = result.split(name).join(String(i18n.global.t(i18nKey)));
+  }
+  // Format any remaining mcp_ tool names inline
+  result = result.replace(/\bmcp_([a-z0-9_]+)/g, (_match, rest) => {
+    const parts = rest.split('_');
+    return parts.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  });
+  result = result.replace(ID_LABEL_RE, '');
+  result = result.replace(UUID_RE, '');
+  result = result.replace(/`\s*`/g, '');
+  result = result.replace(/\(\s*\)/g, '');
+  return result;
 };
 
 // 根元素引用
 const rootElement = ref<HTMLElement | null>(null);
+const streamingStepsContainer = ref<HTMLElement | null>(null);
 
 // 图片预览状态
 const imagePreviewVisible = ref(false);
@@ -534,6 +575,7 @@ import webSearchGlobeGreenIcon from '@/assets/img/websearch-globe-green.svg';
 
 interface SessionData {
   isAgentMode?: boolean;
+  is_completed?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
 }
@@ -544,10 +586,7 @@ const props = defineProps<{
 }>();
 
 // Configure marked for security
-marked.use({
-  mangle: false,
-  headerIds: false
-});
+marked.use({});
 
 // Event stream
 const eventStream = computed(() => props.session?.agentEventStream || []);
@@ -616,6 +655,13 @@ watch(eventStream, (stream) => {
           htmlEl.scrollTop = htmlEl.scrollHeight;
         }
       });
+    }
+    // Auto-scroll streaming steps container to bottom during streaming
+    if (!hasAnswerStarted.value && streamingStepsContainer.value) {
+      const el = streamingStepsContainer.value;
+      if (el.scrollHeight > el.clientHeight) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   });
 }, { immediate: true, deep: true });
@@ -759,13 +805,12 @@ const getThinkingContent = (event: any): string => {
 const getThinkingSummary = (event: any): string => {
   const content = getThinkingContent(event);
   if (!content) return '';
-  // Strip markdown formatting and take first meaningful line
-  const cleaned = content
-    .replace(/^#+\s+/gm, '') // remove heading markers
-    .replace(/\*\*/g, '')     // remove bold
-    .replace(/\*/g, '')       // remove italic
-    .replace(/`/g, '')        // remove code ticks
-    .replace(/\n+/g, ' ')    // collapse newlines
+  const cleaned = sanitizeForDisplay(content)
+    .replace(/^#+\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\n+/g, ' ')
     .trim();
   if (cleaned.length <= 50) return cleaned;
   return cleaned.slice(0, 50) + '...';
@@ -796,18 +841,36 @@ const buildFullEventList = (stream: any[]) => {
     if (isThinkingLikeEvent(event) && result.length > 0) {
       const prev = result[result.length - 1];
       if (isThinkingLikeEvent(prev)) {
-        // Merge into previous: combine content
         const prevContent = prev._mergedContent || getThinkingContent(prev);
         const curContent = getThinkingContent(event);
+
+        // Deduplicate: when a tool_call thinking event's thought content was
+        // already delivered via streaming thinking events (same text), skip it.
+        if (curContent && prevContent && prevContent.includes(curContent)) {
+          continue;
+        }
+        if (curContent && prevContent && curContent.includes(prevContent)) {
+          // Current fully contains previous — replace instead of appending
+          result[result.length - 1] = {
+            type: 'thinking',
+            event_id: prev.event_id,
+            content: curContent,
+            thinking: prev.thinking || event.thinking,
+            timestamp: prev.timestamp,
+            _mergedContent: curContent,
+          };
+          continue;
+        }
+
+        // Normal merge: combine non-overlapping content
         const merged = [prevContent, curContent].filter(Boolean).join('\n\n');
-        // Replace previous with a merged thinking event
         result[result.length - 1] = {
           type: 'thinking',
           event_id: prev.event_id,
           content: merged,
           thinking: prev.thinking || event.thinking,
           timestamp: prev.timestamp,
-          _mergedContent: merged, // track for further merges
+          _mergedContent: merged,
         };
         continue;
       }
@@ -938,9 +1001,15 @@ const handleCitationActivate = (el: HTMLElement) => {
   const url = el.getAttribute('data-url');
   if (!url) return;
   try {
-    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!newWindow) {
-      window.location.assign(url);
+    // @ts-ignore: Wails runtime check
+    if (window.runtime && window.runtime.BrowserOpenURL) {
+      // @ts-ignore
+      window.runtime.BrowserOpenURL(url);
+    } else {
+      const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!newWindow) {
+        window.location.assign(url);
+      }
     }
   } catch {
     window.location.assign(url);
@@ -1138,10 +1207,8 @@ const onRootClick = (e: Event) => {
   // Handle web citation clicks
   const webEl = target.closest?.('.citation-web') as HTMLElement | null;
   if (webEl && webEl.getAttribute('data-url')) {
-    if (!(webEl instanceof HTMLAnchorElement)) {
-      e.preventDefault();
-      handleCitationActivate(webEl);
-    }
+    e.preventDefault();
+    handleCitationActivate(webEl);
     return;
   }
   
@@ -1161,6 +1228,18 @@ const onRootClick = (e: Event) => {
     }
     return;
   }
+  
+  // Handle generic a clicks (especially in Wails desktop)
+  const aEl = target.closest?.('a') as HTMLAnchorElement | null;
+  // @ts-ignore
+  if (aEl && aEl.href && window.runtime && window.runtime.BrowserOpenURL) {
+    if (aEl.href.startsWith('http://') || aEl.href.startsWith('https://')) {
+      e.preventDefault();
+      // @ts-ignore
+      window.runtime.BrowserOpenURL(aEl.href);
+      return;
+    }
+  }
 };
 
 const onRootKeydown = (e: KeyboardEvent) => {
@@ -1171,15 +1250,8 @@ const onRootKeydown = (e: KeyboardEvent) => {
   const webEl = target.closest?.('.citation-web') as HTMLElement | null;
   if (webEl) {
     if (e.key === 'Enter' || e.key === ' ') {
-      if (webEl instanceof HTMLAnchorElement && e.key === 'Enter') {
-        return;
-      }
       e.preventDefault();
-      if (webEl instanceof HTMLAnchorElement) {
-        webEl.click();
-      } else {
-        handleCitationActivate(webEl);
-      }
+      handleCitationActivate(webEl);
     }
     return;
   }
@@ -1321,12 +1393,38 @@ const preprocessMarkdown = (contentStr: string): string => {
     );
 };
 
-// Get tokens from markdown content
+// Get tokens from markdown content (with sanitization for user-friendly display)
 const getTokens = (content: any) => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
   if (!contentStr.trim()) return [];
 
-  const processed = preprocessMarkdown(contentStr);
+  // Extract <kb.../> and <web.../> tags before sanitization to prevent
+  // sanitizeForDisplay from stripping chunk_id labels and UUIDs inside them.
+  const tagPlaceholders: string[] = [];
+  const preserved = contentStr.replace(/<(?:kb|web)\b[^>]*\/>/g, (match) => {
+    const idx = tagPlaceholders.length;
+    tagPlaceholders.push(match);
+    return `\x00TAG${idx}\x00`;
+  });
+
+  // CRITICAL FIX: Also protect image URLs from sanitizeForDisplay
+  // Extract image markdown ![alt](url) before sanitization
+  const imagePlaceholders: string[] = [];
+  const preservedWithImages = preserved.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match) => {
+    const idx = imagePlaceholders.length;
+    imagePlaceholders.push(match);
+    return `\x00IMG${idx}\x00`;
+  });
+
+  let sanitized = sanitizeForDisplay(preservedWithImages);
+
+  // Restore preserved images
+  sanitized = sanitized.replace(/\x00IMG(\d+)\x00/g, (_, idx) => imagePlaceholders[Number(idx)]);
+  
+  // Restore preserved tags
+  sanitized = sanitized.replace(/\x00TAG(\d+)\x00/g, (_, idx) => tagPlaceholders[Number(idx)]);
+
+  const processed = preprocessMarkdown(sanitized);
   return marked.lexer(processed);
 };
 
@@ -1376,28 +1474,9 @@ const protectProviderImageSrcInHTML = (html: string): string => {
   );
 };
 
-// 已渲染的 mermaid 元素 ID 集合
-const renderedMermaidIds = new Set<string>();
-
 // 渲染 Mermaid 图表的函数
 const renderMermaidDiagrams = async () => {
-  try {
-    const renderedCount = await renderMermaidInContainer(rootElement.value, renderedMermaidIds);
-    if (renderedCount > 0) {
-      nextTick(() => {
-        bindMermaidClickEvents();
-      });
-    }
-  } catch (error) {
-    console.error('Mermaid rendering error:', error);
-  }
-};
-
-// 为 Mermaid 容器绑定点击全屏事件（绑定在 div 上，不是 SVG 上）
-const bindMermaidClickEvents = () => {
-  bindMermaidFullscreenEvents(rootElement.value, (svgOuterHTML: string) => {
-    openMermaidFullscreen(svgOuterHTML);
-  });
+  await renderMermaidInContainer(rootElement.value);
 };
 
 // Tool summary - extract key info to display externally
@@ -1524,6 +1603,10 @@ const getToolIcon = (toolName: string): string => {
     return documentIcon;
   } else if (toolName === 'todo_write') {
     return fileAddIcon;
+  } else if (toolName === 'image_analysis') {
+    return thinkingIcon;
+  } else if (toolName.startsWith('mcp_')) {
+    return documentIcon; // MCP external tool icon
   } else {
     return documentIcon; // default icon
   }
@@ -1621,6 +1704,9 @@ const getQueryText = (args: any): string => {
 // Get tool title - prefer summary over description, add query for search tools
 const getToolTitle = (event: any): string => {
   if (event.pending) {
+    if (event.tool_name === 'image_analysis') {
+      return t('agentStream.toolStatus.imageAnalyzing');
+    }
     const localizedName = getLocalizedToolName(event.tool_name);
     return t('agentStream.toolStatus.calling', { name: localizedName });
   }
@@ -1706,6 +1792,9 @@ const getToolTitle = (event: any): string => {
 // Tool description
 const getToolDescription = (event: any): string => {
   if (event.pending) {
+    if (event.tool_name === 'image_analysis') {
+      return t('agentStream.toolStatus.imageAnalyzing');
+    }
     const localizedName = getLocalizedToolName(event.tool_name);
     return t('agentStream.toolStatus.calling', { name: localizedName });
   }
@@ -1723,6 +1812,8 @@ const getToolDescription = (event: any): string => {
     return success ? t('agentStream.toolStatus.thinkingDone') : t('agentStream.toolStatus.thinkingFailed');
   } else if (toolName === 'todo_write') {
     return success ? t('agentStream.toolStatus.updateTodos') : t('agentStream.toolStatus.updateTodosFailed');
+  } else if (toolName === 'image_analysis') {
+    return success ? t('agentStream.toolStatus.imageAnalysisDone') : t('agentStream.toolStatus.imageAnalysisFailed');
   } else {
     const localizedName = getLocalizedToolName(toolName);
     return success ? t('agentStream.toolStatus.called', { name: localizedName }) : t('agentStream.toolStatus.calledFailed', { name: localizedName });
@@ -1828,6 +1919,31 @@ const handleAddToKnowledge = (answerEvent: any) => {
   position: relative;
 }
 
+// Streaming steps container
+.streaming-steps-container {
+  &.streaming-steps-constrained {
+    max-height: 400px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--td-bg-color-component-disabled);
+      border-radius: 2px;
+
+      &:hover {
+        background: var(--td-text-color-placeholder);
+      }
+    }
+  }
+}
+
 // Event items (flat, no timeline)
 .event-item {
   position: relative;
@@ -1840,7 +1956,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
 // ============ Tree View ============
 .tree-container {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   position: relative;
 }
 
@@ -1897,6 +2013,25 @@ const handleAddToKnowledge = (answerEvent: any) => {
   position: relative;
   padding-left: 12px; // indent for branch lines
   margin-top: 6px; // gap from root
+  max-height: 400px;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--td-bg-color-component-disabled);
+    border-radius: 2px;
+
+    &:hover {
+      background: var(--td-text-color-placeholder);
+    }
+  }
 }
 
 .tree-child {
@@ -1906,12 +2041,13 @@ const handleAddToKnowledge = (answerEvent: any) => {
   margin-bottom: 6px; // gap between children
 
   // vertical trunk line (continues for non-last children)
+  // bottom: -6px extends the line through the margin-bottom gap between siblings
   &::before {
     content: '';
     position: absolute;
     left: 0;
     top: 0;
-    bottom: 0;
+    bottom: -6px;
     width: 0;
     border-left: 1px dashed var(--td-component-stroke);
   }
@@ -2092,7 +2228,7 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
 
   .answer-toolbar {
-    margin-top: 4px;
+    margin-top: 10px;
   }
 }
 
@@ -2121,7 +2257,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
 
     &.action-error {
       border-left: 2px solid var(--td-error-color);
-      animation: shakeError 0.4s ease-out;
     }
     
     &.action-pending {

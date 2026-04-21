@@ -43,11 +43,16 @@ func newS3Client(endpoint, accessKey, secretKey, bucketName, region, pathPrefix 
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Create S3 client with custom endpoint if provided
+	// Create S3 client with custom endpoint if provided.
+	// For S3-compatible services (non-AWS), use path-style addressing
+	// (endpoint/bucket/key) instead of virtual-hosted style (bucket.endpoint/key).
 	var client *s3.Client
 	if endpoint != "" {
-		// Use S3-specific endpoint resolver for custom endpoints
-		client = s3.NewFromConfig(cfg, s3.WithEndpointResolver(s3.EndpointResolverFromURL(endpoint)))
+		usePathStyle := !strings.Contains(endpoint, "amazonaws.com")
+		client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = usePathStyle
+		})
 	} else {
 		// Standard AWS S3
 		client = s3.NewFromConfig(cfg)
@@ -167,50 +172,6 @@ func (s *s3FileService) parseS3FilePath(filePath string) (string, error) {
 	return parts[1], nil
 }
 
-// getContentTypeByExt returns the content type based on file extension
-func getContentTypeByExt(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".csv":
-		return "text/csv; charset=utf-8"
-	case ".json":
-		return "application/json"
-	case ".pdf":
-		return "application/pdf"
-	case ".doc":
-		return "application/msword"
-	case ".docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".xls":
-		return "application/vnd.ms-excel"
-	case ".xlsx":
-		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	case ".ppt":
-		return "application/vnd.ms-powerpoint"
-	case ".pptx":
-		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-	case ".txt":
-		return "text/plain; charset=utf-8"
-	case ".md":
-		return "text/markdown"
-	case ".html":
-		return "text/html; charset=utf-8"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".gif":
-		return "image/gif"
-	case ".svg":
-		return "image/svg+xml"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".mp4":
-		return "video/mp4"
-	default:
-		return "application/octet-stream"
-	}
-}
-
 // SaveFile saves a file to S3
 func (s *s3FileService) SaveFile(ctx context.Context,
 	file *multipart.FileHeader, tenantID uint64, knowledgeID string,
@@ -229,7 +190,7 @@ func (s *s3FileService) SaveFile(ctx context.Context,
 	// Determine content type
 	contentType := file.Header.Get("Content-Type")
 	if contentType == "" {
-		contentType = getContentTypeByExt(ext)
+		contentType = utils.GetContentTypeByExt(ext)
 	}
 
 	// Upload file to S3
@@ -300,7 +261,7 @@ func (s *s3FileService) SaveBytes(ctx context.Context, data []byte, tenantID uin
 		Key:           aws.String(objectName),
 		Body:          reader,
 		ContentLength: aws.Int64(int64(len(data))),
-		ContentType:   aws.String("text/csv; charset=utf-8"),
+		ContentType:   aws.String(utils.GetContentTypeByExt(ext)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload bytes to S3: %w", err)

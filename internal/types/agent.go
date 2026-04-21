@@ -7,22 +7,25 @@ import (
 	"time"
 )
 
+// DefaultMaxContextTokens is the default context window budget for agent conversations (200k).
+const DefaultMaxContextTokens = 200000
+
 // AgentConfig represents the full agent configuration (used at tenant level and runtime)
 // This includes all configuration parameters for agent execution
 type AgentConfig struct {
-	MaxIterations     int      `json:"max_iterations"`          // Maximum number of ReAct iterations
-	ReflectionEnabled bool     `json:"reflection_enabled"`      // Whether to enable reflection
-	AllowedTools      []string `json:"allowed_tools"`           // List of allowed tool names
-	Temperature       float64  `json:"temperature"`             // LLM temperature for agent
-	KnowledgeBases    []string `json:"knowledge_bases"`         // Accessible knowledge base IDs
-	KnowledgeIDs      []string `json:"knowledge_ids"`           // Accessible knowledge IDs (individual documents)
-	SystemPrompt      string   `json:"system_prompt,omitempty"` // Unified system prompt (uses web_search_status placeholder for dynamic behavior)
+	MaxIterations  int      `json:"max_iterations"`          // Maximum number of ReAct iterations
+	AllowedTools   []string `json:"allowed_tools"`           // List of allowed tool names
+	Temperature    float64  `json:"temperature"`             // LLM temperature for agent
+	KnowledgeBases []string `json:"knowledge_bases"`         // Accessible knowledge base IDs
+	KnowledgeIDs   []string `json:"knowledge_ids"`           // Accessible knowledge IDs (individual documents)
+	SystemPrompt   string   `json:"system_prompt,omitempty"` // Unified system prompt (uses web_search_status placeholder for dynamic behavior)
 	// Deprecated: Use SystemPrompt instead. Kept for backward compatibility during migration.
 	SystemPromptWebEnabled  string        `json:"system_prompt_web_enabled,omitempty"`  // Deprecated: Custom prompt when web search is enabled
 	SystemPromptWebDisabled string        `json:"system_prompt_web_disabled,omitempty"` // Deprecated: Custom prompt when web search is disabled
 	UseCustomSystemPrompt   bool          `json:"use_custom_system_prompt"`             // Whether to use custom system prompt instead of default
 	WebSearchEnabled        bool          `json:"web_search_enabled"`                   // Whether web search tool is enabled
 	WebSearchMaxResults     int           `json:"web_search_max_results"`               // Maximum number of web search results (default: 5)
+	WebSearchProviderID     string        `json:"web_search_provider_id,omitempty"`     // WebSearchProviderEntity ID (resolved from agent config)
 	MultiTurnEnabled        bool          `json:"multi_turn_enabled"`                   // Whether multi-turn conversation is enabled
 	HistoryTurns            int           `json:"history_turns"`                        // Number of history turns to keep in context
 	SearchTargets           SearchTargets `json:"-"`                                    // Pre-computed unified search targets (runtime only)
@@ -38,6 +41,24 @@ type AgentConfig struct {
 	SkillsEnabled bool     `json:"skills_enabled"` // Whether skills are enabled (default: false)
 	SkillDirs     []string `json:"skill_dirs"`     // Directories to search for skills
 	AllowedSkills []string `json:"allowed_skills"` // Skill names whitelist (empty = allow all)
+
+	// Runtime-only fields (not persisted)
+	VLMModelID string `json:"-"` // VLM model ID for tool result image analysis (set from CustomAgent config)
+	// LLM call timeout in seconds (default: 120). Controls the maximum time for a single LLM call.
+	LLMCallTimeout int `json:"llm_call_timeout,omitempty"`
+
+	// Maximum character length for tool output (default: 16000).
+	// Outputs exceeding this limit are truncated with head + tail preservation.
+	MaxToolOutputChars int `json:"max_tool_output_chars,omitempty"`
+
+	// Maximum context window tokens for the agent (default: 200000).
+	// The agent compresses older messages to stay within this limit,
+	// preserving tool_call/tool_result pairs.
+	MaxContextTokens int `json:"max_context_tokens,omitempty"`
+
+	// Whether to execute independent tool calls in parallel (default: false).
+	// When enabled and the LLM returns multiple tool calls, they run concurrently via errgroup.
+	ParallelToolCalls bool `json:"parallel_tool_calls,omitempty"`
 }
 
 // SessionAgentConfig represents session-level agent configuration
@@ -59,8 +80,13 @@ func (c *AgentConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
 		return nil
 	}
 	return json.Unmarshal(b, c)
@@ -76,8 +102,13 @@ func (c *SessionAgentConfig) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
+	var b []byte
+	switch v := value.(type) {
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
 		return nil
 	}
 	return json.Unmarshal(b, c)
@@ -124,12 +155,20 @@ type Tool interface {
 	Execute(ctx context.Context, args json.RawMessage) (*ToolResult, error)
 }
 
+// Cleanable is an optional interface that tools can implement to release resources.
+// Tools implementing this interface will have their Cleanup method called during
+// registry cleanup (e.g., at the end of an agent session).
+type Cleanable interface {
+	Cleanup(ctx context.Context)
+}
+
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
-	Success bool                   `json:"success"`         // Whether the tool executed successfully
-	Output  string                 `json:"output"`          // Human-readable output
-	Data    map[string]interface{} `json:"data,omitempty"`  // Structured data for programmatic use
-	Error   string                 `json:"error,omitempty"` // Error message if execution failed
+	Success bool                   `json:"success"`          // Whether the tool executed successfully
+	Output  string                 `json:"output"`           // Human-readable output
+	Data    map[string]interface{} `json:"data,omitempty"`   // Structured data for programmatic use
+	Error   string                 `json:"error,omitempty"`  // Error message if execution failed
+	Images  []string               `json:"images,omitempty"` // Base64 data URIs from tool (e.g. MCP image content)
 }
 
 // ToolCall represents a single tool invocation within an agent step

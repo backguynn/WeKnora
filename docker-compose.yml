@@ -38,8 +38,7 @@ services:
     volumes:
       - data-files:/data/files
       - docreader-tmp:/tmp/docreader:ro
-      # Optional: mount custom config file
-      # - ./config/config.yaml:/app/config/config.yaml
+      - ./config/config.yaml:/app/config/config.yaml
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
     healthcheck:
@@ -65,7 +64,8 @@ services:
       - DB_USER=${DB_USER:-}
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME:-}
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-Asia/Shanghai}
+      - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-zh-CN}
       - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
       - OTEL_SERVICE_NAME=WeKnora
       - OTEL_TRACES_EXPORTER=otlp
@@ -84,6 +84,7 @@ services:
       - QDRANT_USE_TLS=${QDRANT_USE_TLS:-false}
       - MILVUS_ADDRESS=milvus:19530
       - MILVUS_COLLECTION=${MILVUS_COLLECTION:-weknora_embeddings}
+      - MILVUS_METRIC_TYPE=${MILVUS_METRIC_TYPE:-IP}
       - DOCREADER_ADDR=${DOCREADER_ADDR:-docreader:50051}
       - DOCREADER_TRANSPORT=${DOCREADER_TRANSPORT:-grpc}
       - WEAVIATE_HOST=${WEAVIATE_HOST:-weaviate:8080}
@@ -94,7 +95,7 @@ services:
       - STORAGE_TYPE=${STORAGE_TYPE:-}
       - LOCAL_STORAGE_BASE_DIR=${LOCAL_STORAGE_BASE_DIR:-}
       - AUTO_RECOVER_DIRTY=${AUTO_RECOVER_DIRTY:-true}
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY_ID=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
       - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-}
@@ -112,14 +113,22 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       - TENANT_AES_KEY=${TENANT_AES_KEY:-}
       - SYSTEM_AES_KEY=${SYSTEM_AES_KEY:-}
+      - SSRF_WHITELIST=${SSRF_WHITELIST:-}
       - CONCURRENCY_POOL_SIZE=${CONCURRENCY_POOL_SIZE:-5}
       - JWT_SECRET=${JWT_SECRET:-}
+      # Crypto: 主密钥和盐值，用于 AppSecret 等敏感字段的 AES-256 加密
+      # 若不设置则自动生成并持久化到 data-files volume（/data/files/.crypto_state.json）
+      # 重启时自动从文件恢复，保证已加密数据可继续解密
+      - CRYPTO_MASTER_KEY=${CRYPTO_MASTER_KEY:-}
+      - CRYPTO_SALT=${CRYPTO_SALT:-}
       # File size limit (in MB)
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       # Agent Skills Sandbox
       - WEKNORA_SANDBOX_MODE=${WEKNORA_SANDBOX_MODE:-docker}
       - WEKNORA_SANDBOX_TIMEOUT=${WEKNORA_SANDBOX_TIMEOUT:-60}
       - WEKNORA_SANDBOX_DOCKER_IMAGE=${WEKNORA_SANDBOX_DOCKER_IMAGE:-wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}}
+      # Agent LLM call timeout
+      - WEKNORA_AGENT_LLM_TIMEOUT=${WEKNORA_AGENT_LLM_TIMEOUT:-}
       - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
     depends_on:
       redis:
@@ -162,7 +171,7 @@ services:
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
     healthcheck:
-      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -175,7 +184,7 @@ services:
 
   # 수정된 PostgreSQL 설정
   postgres:
-    image: paradedb/paradedb:v0.21.4-pg17
+    image: paradedb/paradedb:v0.22.2-pg17
     container_name: WeKnora-postgres
     environment:
       - POSTGRES_USER=${DB_USER}
@@ -337,6 +346,18 @@ services:
     restart: unless-stopped
     profiles:
       - weaviate
+
+  dex:
+    image: dexidp/dex:latest
+    container_name: dex
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./misc/dex-config.yaml:/etc/dex/config.yaml
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    profiles:
+      - dex
+      - full
 
 networks:
   WeKnora-network:

@@ -168,7 +168,7 @@ func (r *messageRepository) SearchMessagesByKeyword(
 		Joins("INNER JOIN sessions ON sessions.id = messages.session_id AND sessions.deleted_at IS NULL").
 		Where("sessions.tenant_id = ?", tenantID).
 		Where("messages.deleted_at IS NULL").
-		Where("messages.content ILIKE ?", "%"+keyword+"%")
+		Where("messages.content ILIKE ?", "%"+escapeLikeKeyword(keyword)+"%")
 
 	if len(sessionIDs) > 0 {
 		query = query.Where("messages.session_id IN ?", sessionIDs)
@@ -233,6 +233,29 @@ func (r *messageRepository) GetKnowledgeIDsBySessionID(
 		return nil, err
 	}
 	return knowledgeIDs, nil
+}
+
+// UpdateMessageImages updates only the images JSONB column for a message.
+// Uses Select to force GORM to include the column even when struct-based
+// Updates would otherwise skip custom Valuer types.
+func (r *messageRepository) UpdateMessageImages(ctx context.Context, sessionID, messageID string, images types.MessageImages) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
+		Update("images", images).Error
+}
+
+// UpdateMessageRenderedContent updates only the rendered_content column for a message.
+func (r *messageRepository) UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
+		Update("rendered_content", renderedContent).Error
+}
+
+// DeleteMessagesBySessionID deletes all messages belonging to a session (soft delete)
+func (r *messageRepository) DeleteMessagesBySessionID(ctx context.Context, sessionID string) error {
+	return r.db.WithContext(ctx).Where("session_id = ?", sessionID).Delete(&types.Message{}).Error
 }
 
 // UpdateMessageKnowledgeID updates the knowledge_id field for a message

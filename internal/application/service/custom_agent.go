@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -23,13 +24,21 @@ var (
 
 // customAgentService implements the CustomAgentService interface
 type customAgentService struct {
-	repo interfaces.CustomAgentRepository
+	repo      interfaces.CustomAgentRepository
+	chunkRepo interfaces.ChunkRepository
+	kbService interfaces.KnowledgeBaseService
 }
 
 // NewCustomAgentService creates a new custom agent service
-func NewCustomAgentService(repo interfaces.CustomAgentRepository) interfaces.CustomAgentService {
+func NewCustomAgentService(
+	repo interfaces.CustomAgentRepository,
+	chunkRepo interfaces.ChunkRepository,
+	kbService interfaces.KnowledgeBaseService,
+) interfaces.CustomAgentService {
 	return &customAgentService{
-		repo: repo,
+		repo:      repo,
+		chunkRepo: chunkRepo,
+		kbService: kbService,
 	}
 }
 
@@ -103,8 +112,8 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 			// Found in database, return with customized config
 			return agent, nil
 		}
-		// Not in database, return default built-in agent from registry
-		if builtinAgent := types.GetBuiltinAgent(id, tenantID); builtinAgent != nil {
+		// Not in database, return default built-in agent from registry (i18n-aware)
+		if builtinAgent := types.GetBuiltinAgentWithContext(ctx, id, tenantID); builtinAgent != nil {
 			return builtinAgent, nil
 		}
 	}
@@ -179,8 +188,8 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 				}
 			}
 		} else {
-			// Use default built-in agent
-			if agent := types.GetBuiltinAgent(builtinID, tenantID); agent != nil {
+			// Use default built-in agent (i18n-aware)
+			if agent := types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID); agent != nil {
 				result = append(result, agent)
 			}
 		}
@@ -258,8 +267,8 @@ func (s *customAgentService) UpdateAgent(ctx context.Context, agent *types.Custo
 
 // updateBuiltinAgent updates a built-in agent's configuration (but not basic info)
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
-	// Get the default built-in agent from registry
-	defaultAgent := types.GetBuiltinAgent(agent.ID, tenantID)
+	// Get the default built-in agent from registry (i18n-aware)
+	defaultAgent := types.GetBuiltinAgentWithContext(ctx, agent.ID, tenantID)
 	if defaultAgent == nil {
 		return nil, ErrAgentNotFound
 	}
@@ -409,4 +418,195 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 
 	logger.Infof(ctx, "Agent copied successfully, source ID: %s, new ID: %s", id, newAgent.ID)
 	return newAgent, nil
+}
+
+// GetSuggestedQuestions returns suggested questions for the agent based on its
+// associated knowledge bases.
+func (s *customAgentService) GetSuggestedQuestions(
+	ctx context.Context,
+	agentID string,
+	kbIDs []string,
+	knowledgeIDs []string,
+	limit int,
+) ([]types.SuggestedQuestion, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	// Get tenant ID from context
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, ErrInvalidTenantID
+	}
+
+	// Get agent configuration
+	agent, err := s.GetAgentByID(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []types.SuggestedQuestion
+
+	// 1. Add agent config suggested_prompts first (highest priority)
+	if len(agent.Config.SuggestedPrompts) > 0 {
+		for _, prompt := range agent.Config.SuggestedPrompts {
+			if strings.TrimSpace(prompt) == "" {
+				continue
+			}
+			result = append(result, types.SuggestedQuestion{
+				Question: prompt,
+				Source:   "agent_config",
+			})
+		}
+	}
+
+	// 2. Determine knowledge base scope
+	effectiveKBIDs := kbIDs
+	if len(effectiveKBIDs) == 0 && len(knowledgeIDs) == 0 {
+		// Use agent's KB configuration
+		switch agent.Config.KBSelectionMode {
+		case "all":
+			kbs, err := s.kbService.ListKnowledgeBases(ctx)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"agent_id": agentID,
+				})
+				// Return what we have so far (agent_config suggestions)
+				return s.truncateQuestions(result, limit), nil
+			}
+			for _, kb := range kbs {
+				effectiveKBIDs = append(effectiveKBIDs, kb.ID)
+			}
+		case "selected":
+			effectiveKBIDs = agent.Config.KnowledgeBases
+		case "none":
+			// No KB access, return agent_config suggestions only
+			return s.truncateQuestions(result, limit), nil
+		default:
+			// Default to agent's configured KBs
+			effectiveKBIDs = agent.Config.KnowledgeBases
+		}
+	}
+
+	if len(effectiveKBIDs) == 0 && len(knowledgeIDs) == 0 {
+		return s.truncateQuestions(result, limit), nil
+	}
+
+	// Deduplicate questions we've already collected
+	seen := make(map[string]bool)
+	for _, q := range result {
+		seen[q.Question] = true
+	}
+
+	remaining := limit - len(result)
+	if remaining <= 0 {
+		return s.truncateQuestions(result, limit), nil
+	}
+
+	// 3. Collect candidate chunks from both FAQ and Document KBs,
+	//    grouped by knowledge_id for diversity.
+	//    knowledgeID -> list of questions
+	buckets := make(map[string][]types.SuggestedQuestion)
+
+	// Determine query scope
+	queryKBIDs := effectiveKBIDs
+	queryKnowledgeIDs := knowledgeIDs
+
+	// Fetch a large pool so DB-level random sampling covers multiple documents.
+	fetchLimit := remaining * 5
+	if fetchLimit < 20 {
+		fetchLimit = 20
+	}
+
+	// Collect FAQ recommended chunks
+	faqChunks, err := s.chunkRepo.ListRecommendedFAQChunks(ctx, tenantID, queryKBIDs, queryKnowledgeIDs, fetchLimit)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"agent_id": agentID,
+		})
+	} else {
+		for _, chunk := range faqChunks {
+			meta, err := chunk.FAQMetadata()
+			if err != nil || meta == nil || meta.StandardQuestion == "" {
+				continue
+			}
+			if seen[meta.StandardQuestion] {
+				continue
+			}
+			seen[meta.StandardQuestion] = true
+			buckets[chunk.KnowledgeID] = append(buckets[chunk.KnowledgeID], types.SuggestedQuestion{
+				Question:        meta.StandardQuestion,
+				Source:          "faq",
+				KnowledgeBaseID: chunk.KnowledgeBaseID,
+			})
+		}
+	}
+
+	// Collect Document chunks with generated questions
+	docChunks, err := s.chunkRepo.ListRecentDocumentChunksWithQuestions(ctx, tenantID, queryKBIDs, queryKnowledgeIDs, fetchLimit)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"agent_id": agentID,
+		})
+	} else {
+		for _, chunk := range docChunks {
+			meta, err := chunk.DocumentMetadata()
+			if err != nil || meta == nil || len(meta.GeneratedQuestions) == 0 {
+				continue
+			}
+			q := meta.GeneratedQuestions[0].Question
+			if q == "" || seen[q] {
+				continue
+			}
+			seen[q] = true
+			buckets[chunk.KnowledgeID] = append(buckets[chunk.KnowledgeID], types.SuggestedQuestion{
+				Question:        q,
+				Source:          "document",
+				KnowledgeBaseID: chunk.KnowledgeBaseID,
+			})
+		}
+	}
+
+	// 4. Shuffle within each bucket, then round-robin across buckets
+	//    to ensure diversity across different documents.
+	bucketKeys := make([]string, 0, len(buckets))
+	for k, qs := range buckets {
+		bucketKeys = append(bucketKeys, k)
+		rand.Shuffle(len(qs), func(i, j int) { qs[i], qs[j] = qs[j], qs[i] })
+		buckets[k] = qs
+	}
+	rand.Shuffle(len(bucketKeys), func(i, j int) {
+		bucketKeys[i], bucketKeys[j] = bucketKeys[j], bucketKeys[i]
+	})
+
+	// Round-robin pick one question from each document in turn.
+	offsets := make(map[string]int, len(bucketKeys))
+	for len(result) < limit {
+		picked := false
+		for _, key := range bucketKeys {
+			if len(result) >= limit {
+				break
+			}
+			qs := buckets[key]
+			idx := offsets[key]
+			if idx < len(qs) {
+				result = append(result, qs[idx])
+				offsets[key] = idx + 1
+				picked = true
+			}
+		}
+		if !picked {
+			break
+		}
+	}
+
+	return s.truncateQuestions(result, limit), nil
+}
+
+// truncateQuestions truncates the question list to the specified limit
+func (s *customAgentService) truncateQuestions(questions []types.SuggestedQuestion, limit int) []types.SuggestedQuestion {
+	if len(questions) > limit {
+		return questions[:limit]
+	}
+	return questions
 }

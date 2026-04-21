@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 )
 
 // Chunk represents a piece of split text with position tracking.
@@ -36,7 +38,7 @@ type SplitterConfig struct {
 func DefaultConfig() SplitterConfig {
 	return SplitterConfig{
 		ChunkSize:    512,
-		ChunkOverlap: 128,
+		ChunkOverlap: 64,
 		Separators:   []string{"\n\n", "\n", "。"},
 	}
 }
@@ -167,7 +169,11 @@ func SplitText(text string, cfg SplitterConfig) []Chunk {
 // buildUnitsWithProtection splits text into units, preserving protected spans as atomic.
 // Start/End positions in the returned units are rune offsets (not byte offsets),
 // because downstream merge logic indexes content via []rune slicing.
+// If a protected span exceeds maxProtectedSize, it will be forcibly split to prevent
+// creating chunks that are too large for downstream processing (e.g., embedding APIs).
 func buildUnitsWithProtection(text string, protected []span, separators []string) []splitUnit {
+	const maxProtectedSize = 7500 // Maximum size for a protected unit (留余量给标题等)
+
 	var units []splitUnit
 	bytePos := 0
 	runePos := 0
@@ -191,11 +197,43 @@ func buildUnitsWithProtection(text string, protected []span, separators []string
 
 		protText := text[p.start:p.end]
 		protRuneLen := runeLen(protText)
-		units = append(units, splitUnit{
-			text:  protText,
-			start: runePos,
-			end:   runePos + protRuneLen,
-		})
+
+		// If protected content is too large, forcibly split it
+		if protRuneLen > maxProtectedSize {
+			// Split into smaller chunks at line breaks or spaces
+			runes := []rune(protText)
+			offset := 0
+			for offset < len(runes) {
+				chunkEnd := offset + maxProtectedSize
+				if chunkEnd > len(runes) {
+					chunkEnd = len(runes)
+				} else {
+					// Try to break at a newline or space
+					for i := chunkEnd - 1; i > offset && i > chunkEnd-200; i-- {
+						if runes[i] == '\n' || runes[i] == ' ' {
+							chunkEnd = i + 1
+							break
+						}
+					}
+				}
+
+				chunkText := string(runes[offset:chunkEnd])
+				chunkLen := chunkEnd - offset
+				units = append(units, splitUnit{
+					text:  chunkText,
+					start: runePos + offset,
+					end:   runePos + offset + chunkLen,
+				})
+				offset = chunkEnd
+			}
+		} else {
+			// Normal case: keep protected content as a single unit
+			units = append(units, splitUnit{
+				text:  protText,
+				start: runePos,
+				end:   runePos + protRuneLen,
+			})
+		}
 		runePos += protRuneLen
 		bytePos = p.end
 	}
@@ -219,10 +257,17 @@ func buildUnitsWithProtection(text string, protected []span, separators []string
 }
 
 // mergeUnits combines split units into chunks with overlap tracking.
+// Enforces an absolute maximum chunk size to prevent exceeding downstream limits (e.g., embedding APIs).
+// Active contextual headers (e.g., Markdown table headers) are prepended to new
+// chunks so that every chunk carries its own header context.
 func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 	if len(units) == 0 {
 		return nil
 	}
+
+	const absoluteMaxSize = 7500
+
+	ht := newHeaderTracker()
 
 	var chunks []Chunk
 	var current []splitUnit
@@ -231,12 +276,92 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 	for _, u := range units {
 		uLen := runeLen(u.text)
 
-		// If adding this unit exceeds chunk size and we have content, flush
-		if curLen+uLen > chunkSize && len(current) > 0 {
+		// If this single unit exceeds absolute max, force split it further
+		if uLen > absoluteMaxSize {
+			// Flush current chunk if any
+			if len(current) > 0 {
+				chunks = append(chunks, buildChunk(current, len(chunks)))
+				current = nil
+				curLen = 0
+			}
+
+			// Update header state even for oversized units
+			ht.update(u.text)
+
+			// Split this oversized unit into smaller chunks
+			runes := []rune(u.text)
+			offset := 0
+			for offset < len(runes) {
+				chunkEnd := offset + absoluteMaxSize
+				if chunkEnd > len(runes) {
+					chunkEnd = len(runes)
+				} else {
+					for i := chunkEnd - 1; i > offset && i > chunkEnd-200; i-- {
+						if runes[i] == '\n' || runes[i] == ' ' {
+							chunkEnd = i + 1
+							break
+						}
+					}
+				}
+
+				chunkText := string(runes[offset:chunkEnd])
+				chunks = append(chunks, Chunk{
+					Content: chunkText,
+					Seq:     len(chunks),
+					Start:   u.start + offset,
+					End:     u.start + chunkEnd,
+				})
+				offset = chunkEnd
+			}
+			continue
+		}
+
+		// Update header tracking
+		ht.update(u.text)
+		headers := ht.getHeaders()
+		headersLen := runeLen(headers)
+		if headersLen > chunkSize {
+			headers = ""
+			headersLen = 0
+		}
+
+		// If adding this unit (plus reserving space for headers in a potential
+		// next chunk) would exceed chunk size, flush the current chunk.
+		if curLen+uLen+headersLen > chunkSize && len(current) > 0 {
 			chunks = append(chunks, buildChunk(current, len(chunks)))
 
 			// Keep overlap from the end of current
 			current, curLen = computeOverlap(current, chunkOverlap, chunkSize, uLen)
+
+			// Shrink overlap further if needed to fit headers + next unit
+			if headers != "" && headersLen+uLen <= chunkSize {
+				for len(current) > 0 && curLen+uLen+headersLen > chunkSize {
+					curLen -= runeLen(current[0].text)
+					current = current[1:]
+				}
+
+				// Prepend headers if the column-name context is not already present
+				// in the overlap or the next unit being added.
+				overlapText := unitsText(current)
+				if !headerAlreadyPresent(headers, overlapText, u.text) {
+					startPos := u.start
+					if len(current) > 0 {
+						startPos = current[0].start
+					}
+					hUnit := splitUnit{text: headers, start: startPos, end: startPos}
+					current = append([]splitUnit{hUnit}, current...)
+					curLen += headersLen
+				}
+			}
+		}
+
+		// Check if adding this unit would exceed absolute max
+		if curLen+uLen > absoluteMaxSize {
+			if len(current) > 0 {
+				chunks = append(chunks, buildChunk(current, len(chunks)))
+				current = nil
+				curLen = 0
+			}
 		}
 
 		current = append(current, u)
@@ -249,6 +374,57 @@ func mergeUnits(units []splitUnit, chunkSize, chunkOverlap int) []Chunk {
 	}
 
 	return chunks
+}
+
+// unitsText concatenates the text of all units.
+func unitsText(units []splitUnit) string {
+	var sb strings.Builder
+	for _, u := range units {
+		sb.WriteString(u.text)
+	}
+	return sb.String()
+}
+
+// headerAlreadyPresent returns true if the column-name row from the header
+// is already present in the overlap or the next unit, preventing duplication.
+func headerAlreadyPresent(headers, overlapText, unitText string) bool {
+	// Fast path: full header already in overlap or unit
+	if strings.Contains(overlapText, headers) || strings.Contains(unitText, headers) {
+		return true
+	}
+
+	// Extract the column-name row (first meaningful non-separator line).
+	// For a rewritten header like "| col1 | col2 |\n| --- | --- |\n",
+	// the first line is the column names.
+	colRow := headerColumnRow(headers)
+	if colRow == "" {
+		return false
+	}
+
+	return strings.Contains(overlapText, colRow) || strings.Contains(unitText, colRow)
+}
+
+// headerColumnRow extracts the column-name line from a header string.
+// Returns empty string if the header has no meaningful column names.
+func headerColumnRow(header string) string {
+	for _, line := range strings.Split(header, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "---") {
+			continue
+		}
+		// Skip lines that are only pipes/whitespace (empty header rows)
+		onlyPipes := true
+		for _, r := range line {
+			if r != '|' && r != ' ' && r != '\t' {
+				onlyPipes = false
+				break
+			}
+		}
+		if !onlyPipes {
+			return line
+		}
+	}
+	return ""
 }
 
 func buildChunk(units []splitUnit, seq int) Chunk {
@@ -286,11 +462,12 @@ func computeOverlap(current []splitUnit, chunkOverlap, chunkSize, nextLen int) (
 		startIdx = i
 	}
 
-	// Skip leading separators-only units in the overlap
+	// Skip leading separator-only and header-marker units in the overlap
 	for startIdx < len(current) {
 		u := current[startIdx]
+		isHeaderMarker := u.start == u.end
 		trimmed := strings.TrimSpace(u.text)
-		if trimmed == "" || isSeparatorOnly(u.text) {
+		if isHeaderMarker || trimmed == "" || isSeparatorOnly(u.text) {
 			overlapLen -= runeLen(u.text)
 			startIdx++
 		} else {
@@ -342,30 +519,43 @@ func SplitTextParentChild(text string, parentCfg, childCfg SplitterConfig) Paren
 		return ParentChildResult{}
 	}
 
+	var newParents []Chunk
 	var children []ChildChunk
 	childSeq := 0
-	for pi, parent := range parents {
+	for _, parent := range parents {
 		subs := SplitText(parent.Content, childCfg)
+
+		parentIndex := -1
+		if len(subs) > 1 || (len(subs) == 1 && subs[0].Content != parent.Content) {
+			parentIndex = len(newParents)
+			newParents = append(newParents, parent)
+		}
+
 		for _, sub := range subs {
 			// Adjust offsets: sub positions are relative to parent content,
 			// shift to document-level offsets.
+			// Use additive shift (not Content-length based) so that chunks with
+			// prepended context headers keep correct positional tracking.
 			sub.Seq = childSeq
 			sub.Start += parent.Start
-			sub.End = sub.Start + runeLen(sub.Content)
+			sub.End += parent.Start
 			children = append(children, ChildChunk{
 				Chunk:       sub,
-				ParentIndex: pi,
+				ParentIndex: parentIndex,
 			})
 			childSeq++
 		}
 	}
-	return ParentChildResult{Parents: parents, Children: children}
+	return ParentChildResult{Parents: newParents, Children: children}
 }
 
 // ExtractImageRefs extracts markdown image references from text.
-var imageRefPattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+// The URL group supports one level of balanced parentheses so that URLs
+// like https://example.com/item_(abc)/123 are captured in full.
+var imageRefPattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^()\s]*(?:\([^)]*\)[^()\s]*)*)\)`)
 
 func ExtractImageRefs(text string) []ImageRef {
+	text = docparser.UnwrapLinkedImages(text)
 	matches := imageRefPattern.FindAllStringSubmatchIndex(text, -1)
 	var refs []ImageRef
 	for _, m := range matches {

@@ -15,9 +15,10 @@ import AgentSelector from './AgentSelector.vue';
 import { getCaretCoordinates } from '@/utils/caret';
 import { listModels, type ModelConfig } from '@/api/model';
 import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
-import { getTenantWebSearchConfig } from '@/api/web-search';
+import { listWebSearchProviders, type WebSearchProviderEntity } from '@/api/web-search-provider';
 import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
+import AttachmentUpload, { type AttachmentFile } from './AttachmentUpload.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -29,6 +30,52 @@ const { t } = useI18n();
 
 let query = ref("");
 const showKbSelector = ref(false);
+
+// Image upload state
+const uploadedImages = ref<Array<{ file: File; preview: string }>>([]);
+const imageInputRef = ref<HTMLInputElement>();
+const imageUploading = ref(false);
+
+// Attachment upload state
+const attachmentUploadRef = ref<InstanceType<typeof AttachmentUpload>>();
+const uploadedAttachments = ref<AttachmentFile[]>([]);
+
+const handleImageSelect = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  if (!input.files) return;
+  addImageFiles(Array.from(input.files));
+  input.value = '';
+};
+
+const addImageFiles = (files: File[]) => {
+  if (!isImageUploadEnabledByAgent.value) return;
+  const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const maxSize = 10 * 1024 * 1024;
+  for (const file of files) {
+    if (uploadedImages.value.length >= 5) {
+      MessagePlugin.warning(t('chat.imageTooMany'));
+      break;
+    }
+    if (!allowed.includes(file.type)) {
+      MessagePlugin.warning(t('chat.imageTypeSizeError'));
+      continue;
+    }
+    if (file.size > maxSize) {
+      MessagePlugin.warning(t('chat.imageTypeSizeError'));
+      continue;
+    }
+    uploadedImages.value.push({ file, preview: URL.createObjectURL(file) });
+  }
+};
+
+const removeImage = (index: number) => {
+  const removed = uploadedImages.value.splice(index, 1);
+  if (removed.length > 0) URL.revokeObjectURL(removed[0].preview);
+};
+
+const triggerImageUpload = () => {
+  imageInputRef.value?.click();
+};
 const atButtonRef = ref<HTMLElement>();
 const showAgentModeSelector = ref(false);
 const agentModeButtonRef = ref<HTMLElement>();
@@ -115,6 +162,11 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
     if (showMention.value) {
       loadMentionItems(mentionQuery.value, true);
     }
+    // Clear images when switching to an agent that doesn't support image upload
+    if (!isImageUploadEnabledByAgent.value && uploadedImages.value.length > 0) {
+      uploadedImages.value.forEach(img => URL.revokeObjectURL(img.preview));
+      uploadedImages.value = [];
+    }
   }
 }, { immediate: true });
 
@@ -143,6 +195,11 @@ watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async 
 const agentWebSearchEnabled = computed(() => {
   if (!hasAgentConfig.value) return null; // null 表示不受智能体控制
   return currentAgentConfig.value?.web_search_enabled ?? true;
+});
+
+const agentWebSearchProviderId = computed(() => {
+  if (!hasAgentConfig.value) return '';
+  return currentAgentConfig.value?.web_search_provider_id || '';
 });
 
 // 网络搜索是否被智能体禁用（只读状态）- 只有明确设置为 false 时才禁用
@@ -175,6 +232,12 @@ const agentModelId = computed(() => {
 const agentSupportedFileTypes = computed(() => {
   if (!hasAgentConfig.value) return [];
   return currentAgentConfig.value?.supported_file_types || [];
+});
+
+// 智能体是否启用了图片上传（多模态）
+const isImageUploadEnabledByAgent = computed(() => {
+  if (!hasAgentConfig.value) return false;
+  return currentAgentConfig.value?.image_upload_enabled === true;
 });
 
 // 模型选择是否被智能体锁定 - 已移除锁定逻辑，允许用户自由切换模型
@@ -229,7 +292,6 @@ const isAgentEnabled = computed(() => settingsStore.isAgentEnabled);
 const isWebSearchEnabled = computed(() => settingsStore.isWebSearchEnabled);
 const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBases || []);
 const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
-const isWebSearchConfigured = ref(false);
 
 // 获取已选择的知识库信息
 const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq'; knowledge_count?: number; chunk_count?: number }>>([]);
@@ -468,19 +530,29 @@ watch(selectedFileIds, () => {
   loadFiles();
 }, { immediate: true });
 
+const webSearchProviders = ref<WebSearchProviderEntity[]>([]);
+
+const isWebSearchConfigured = computed(() => {
+  const agentProviderId = agentWebSearchProviderId.value;
+  if (agentProviderId) {
+    return webSearchProviders.value.some(p => p.id === agentProviderId);
+  }
+
+  return webSearchProviders.value.some(p => p.is_default);
+});
+
 const loadWebSearchConfig = async () => {
   try {
-    const response: any = await getTenantWebSearchConfig();
-    const config = response?.data;
-    const configured = !!(config && config.provider);
-    isWebSearchConfigured.value = configured;
+    const response = await listWebSearchProviders();
+    const providers = (response as any)?.data;
+    webSearchProviders.value = Array.isArray(providers) ? providers : [];
 
-    if (!configured && settingsStore.isWebSearchEnabled) {
+    if (!isWebSearchConfigured.value && settingsStore.isWebSearchEnabled) {
       settingsStore.toggleWebSearch(false);
     }
   } catch (error) {
     console.error('Failed to load web search config:', error);
-    isWebSearchConfigured.value = false;
+    webSearchProviders.value = [];
     if (settingsStore.isWebSearchEnabled) {
       settingsStore.toggleWebSearch(false);
     }
@@ -1285,7 +1357,10 @@ watch([selectedKbIds, selectedFileIds], ([kbIds, fileIds]) => {
   }
 }, { deep: true });
 
-const emit = defineEmits(['send-msg', 'stop-generation']);
+const emit = defineEmits<{
+  (e: 'send-msg', query: string, modelId: string, mentionedItems: any[], imageFiles: File[], attachmentFiles: AttachmentFile[]): void;
+  (e: 'stop-generation'): void;
+}>();
 
 const createSession = async (val: string) => {
   if (!val.trim()) {
@@ -1321,7 +1396,24 @@ const createSession = async (val: string) => {
     type: item.type,
     kb_type: item.type === 'kb' ? (item.kbType || 'document') : undefined
   }));
-  emit('send-msg', val, selectedModelId.value, mentionedItems);
+  const imageFiles = uploadedImages.value.map(img => img.file);
+  const attachmentFiles = uploadedAttachments.value;
+  
+  // Blur the textarea BEFORE emitting, so that when the parent navigates away
+  // and Vue unmounts this component, TDesign's blur handler won't fire on a
+  // detached DOM element (which causes getComputedStyle to throw).
+  const textarea = getTextareaEl();
+  if (textarea) textarea.blur();
+  emit('send-msg', val, selectedModelId.value, mentionedItems, imageFiles, attachmentFiles);
+  
+  // Clean up image previews
+  uploadedImages.value.forEach(img => URL.revokeObjectURL(img.preview));
+  uploadedImages.value = [];
+  
+  // Clean up attachments
+  attachmentUploadRef.value?.clear();
+  uploadedAttachments.value = [];
+  
   clearvalue();
 }
 
@@ -1503,6 +1595,9 @@ const handleSelectAgent = (agent: CustomAgent, sourceTenantId?: string) => {
 }
 
 const clearvalue = () => {
+  // Guard: only clear when the textarea DOM element is still mounted,
+  // otherwise TDesign's autosize will call getComputedStyle on a non-Element.
+  if (!getTextareaEl()) return;
   query.value = "";
 }
 
@@ -1553,6 +1648,36 @@ const onKeydown = (val: string, event: { e: { preventDefault(): unknown; keyCode
     createSession(val)
   }
 }
+
+const onPaste = (e: ClipboardEvent) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const imageFiles: File[] = [];
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length > 0 && isImageUploadEnabledByAgent.value) {
+    e.preventDefault();
+    addImageFiles(imageFiles);
+  }
+};
+
+const onDrop = (e: DragEvent) => {
+  e.preventDefault();
+  const files = e.dataTransfer?.files;
+  if (!files) return;
+  const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+  if (imageFiles.length > 0 && isImageUploadEnabledByAgent.value) {
+    addImageFiles(imageFiles);
+  }
+};
+
+const onDragOver = (e: DragEvent) => {
+  e.preventDefault();
+};
 
 const handleGoToWebSearchSettings = () => {
   uiStore.openSettings('websearch');
@@ -1730,11 +1855,44 @@ onBeforeRouteUpdate((to, from, next) => {
   next()
 })
 
+defineExpose({
+  triggerSend(text: string) {
+    if (!text.trim()) return;
+    query.value = text;
+    nextTick(() => createSession(text));
+  }
+});
+
 </script>
 <template>
-  <div class="answers-input">
+  <div class="answers-input" @drop="onDrop" @dragover="onDragOver">
+    <!-- Hidden file input for image upload -->
+    <input
+      ref="imageInputRef"
+      type="file"
+      accept="image/jpeg,image/png,image/gif,image/webp"
+      multiple
+      style="display:none"
+      @change="handleImageSelect"
+    />
     <!-- 富文本输入框容器 -->
     <div class="rich-input-container">
+        <!-- 图片预览区域 -->
+      <div v-if="uploadedImages.length > 0" class="image-preview-bar">
+        <div v-for="(img, idx) in uploadedImages" :key="idx" class="image-preview-item">
+          <img :src="img.preview" class="image-preview-thumb" />
+          <span class="image-preview-remove" @click="removeImage(idx)">×</span>
+        </div>
+      </div>
+      
+      <!-- 附件列表区域 (由 AttachmentUpload 组件渲染) -->
+      <AttachmentUpload
+        ref="attachmentUploadRef"
+        :max-files="5"
+        :max-size="20"
+        @update:files="uploadedAttachments = $event"
+      />
+      
         <!-- 选中的知识库和文件标签（显示在输入框内顶部） -->
       <div v-if="allSelectedItems.length > 0" class="selected-tags-inline">
         <span 
@@ -1771,6 +1929,7 @@ onBeforeRouteUpdate((to, from, next) => {
         @input="onInput"
         @compositionstart="onCompositionStart"
         @compositionend="onCompositionEnd"
+        @paste="onPaste"
       />
     </div>
     
@@ -1864,6 +2023,50 @@ onBeforeRouteUpdate((to, from, next) => {
               <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
             </svg>
+          </div>
+        </t-tooltip>
+
+        <!-- 图片上传按钮 -->
+        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+          <template #content>
+            <div v-if="!isImageUploadEnabledByAgent" class="tooltip-with-link">
+              <span>{{ $t('input.imageUploadDisabledByAgent') }}</span>
+              <a href="#" @click.prevent="handleGoToAgentSettings('model')">{{ $t('input.goToAgentSettings') }}</a>
+            </div>
+            <span v-else>{{ $t('chat.imageUploadTooltip') }}</span>
+          </template>
+          <div
+            class="control-btn image-upload-btn"
+            :class="{ 
+              'active': uploadedImages.length > 0,
+              'disabled': !isImageUploadEnabledByAgent
+            }"
+            @click.stop="isImageUploadEnabledByAgent && triggerImageUpload()"
+          >
+            <svg width="18" height="18" viewBox="0 0 1024 1024" fill="currentColor" class="control-icon">
+              <path d="M896 128H128c-35.3 0-64 28.7-64 64v640c0 35.3 28.7 64 64 64h768c35.3 0 64-28.7 64-64V192c0-35.3-28.7-64-64-64zM128 832V192h768l0.1 640H128z"/>
+              <path d="M352 448a96 96 0 1 0 0-192 96 96 0 0 0 0 192z"/>
+              <path d="M128 768l224-288 160 160 192-256L896 640v128H128z"/>
+            </svg>
+            <span v-if="uploadedImages.length > 0" class="image-count">{{ uploadedImages.length }}</span>
+          </div>
+        </t-tooltip>
+
+        <!-- 附件上传按钮 -->
+        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+          <template #content>
+            <span>{{ uploadedAttachments.length > 0 ? $t('chat.attachmentWithCount', { count: uploadedAttachments.length }) : $t('chat.attachmentUploadTooltip') }}</span>
+          </template>
+          <div
+            class="control-btn attachment-upload-btn"
+            :class="{ 'active': uploadedAttachments.length > 0 }"
+            @click.stop="attachmentUploadRef?.triggerFileSelect()"
+          >
+            <!-- 回形针图标 -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="control-icon">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+            <span v-if="uploadedAttachments.length > 0" class="attachment-count">{{ uploadedAttachments.length }}</span>
           </div>
         </t-tooltip>
 
@@ -2379,6 +2582,127 @@ const getImgSrc = (url: string) => {
   color: var(--td-brand-color);
 }
 
+/* Image upload */
+.image-upload-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  min-width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--td-text-color-secondary, #666);
+
+  &:hover {
+    background: var(--td-bg-color-secondarycontainer-hover, #f0f0f0);
+    color: var(--td-text-color-primary, #333);
+  }
+
+  &.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: #07C05F;
+  }
+
+  .image-count {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #07C05F;
+    color: #fff;
+    font-size: 10px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+}
+
+/* Attachment upload */
+.attachment-upload-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  min-width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--td-text-color-secondary, #666);
+
+  &:hover {
+    background: var(--td-bg-color-secondarycontainer-hover, #f0f0f0);
+    color: var(--td-text-color-primary, #333);
+  }
+
+  &.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: #07C05F;
+  }
+
+  .attachment-count {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #07C05F;
+    color: #fff;
+    font-size: 10px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+}
+
+.image-preview-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  flex-wrap: wrap;
+}
+
+.image-preview-item {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--td-border-level-1-color, #e7e7e7);
+
+  .image-preview-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .image-preview-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    cursor: pointer;
+    line-height: 1;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.7);
+    }
+  }
+}
+
 .websearch-btn {
   width: 28px;
   height: 28px;
@@ -2509,6 +2833,18 @@ const getImgSrc = (url: string) => {
     background: var(--td-brand-color);
     border-radius: 50%;
     display: block;
+    animation: stopBtnPulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes stopBtnPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.75);
+    opacity: 0.6;
   }
 }
 

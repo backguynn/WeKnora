@@ -4,6 +4,7 @@
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
                 <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="sidebar-toggle"
                  @click="uiStore.toggleSidebar"
@@ -60,6 +61,14 @@
                 </div>
                 </t-tooltip>
                 <div ref="submenuscrollContainer" @scroll="handleScroll" class="submenu" v-if="item.children && !uiStore.sidebarCollapsed">
+                    <!-- 骨架屏占位 -->
+                    <template v-if="loading && groupedSessions.length === 0">
+                        <div v-for="n in 5" :key="'skel-'+n" class="submenu_item_p">
+                            <div class="submenu_item">
+                                <t-skeleton animation="gradient" style="margin-left:18px;width:80%" :row-col="[{ width: '100%', height: '16px' }]" />
+                            </div>
+                        </div>
+                    </template>
                     <template v-for="(group, groupIndex) in groupedSessions" :key="groupIndex">
                         <div class="timeline_header">{{ group.label }}</div>
                         <div class="submenu_item_p" v-for="(subitem, subindex) in group.items" :key="subitem.id">
@@ -77,7 +86,7 @@
                                     {{ subitem.title }}
                                 </span>
                                 <t-dropdown v-if="!batchMode"
-                                    :options="[{ content: t('upload.deleteRecord'), value: 'delete' }, { content: t('menu.batchManage'), value: 'batchManage' }]"
+                                    :options="[{ content: t('menu.clearMessages'), value: 'clearMessages', prefixIcon: () => h(TIcon, { name: 'clear', size: '16px' }) }, { content: t('menu.batchManage'), value: 'batchManage', prefixIcon: () => h(TIcon, { name: 'queue', size: '16px' }) }, { content: t('upload.deleteRecord'), value: 'delete', theme: 'error', prefixIcon: () => h(TIcon, { name: 'delete', size: '16px' }) }]"
                                     @click="handleSessionMenuClick($event, subitem.originalIndex, subitem)"
                                     placement="bottom-right"
                                     trigger="click">
@@ -124,19 +133,20 @@
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { onMounted, watch, computed, ref } from 'vue';
+import { onMounted, watch, computed, ref, h } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getSessionsList, delSession, batchDelSessions, deleteAllSessions } from "@/api/chat/index";
+import { getSessionsList, delSession, batchDelSessions, deleteAllSessions, clearSessionMessages } from "@/api/chat/index";
 import { getKnowledgeBaseById } from '@/api/knowledge-base';
 import { logout as logoutApi } from '@/api/auth';
 import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
 import { useOrganizationStore } from '@/stores/organization';
 import { useUIStore } from '@/stores/ui';
-import { MessagePlugin, DialogPlugin } from "tdesign-vue-next";
+import { MessagePlugin, DialogPlugin, Icon as TIcon } from "tdesign-vue-next";
 import UserMenu from '@/components/UserMenu.vue';
 import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
+import { getSystemInfo } from '@/api/system';
 
 const { t } = useI18n();
 const usemenuStore = useMenuStore();
@@ -155,8 +165,9 @@ const submenuscrollContainer = ref(null);
 const totalPages = computed(() => Math.ceil(total.value / page_size.value));
 const hasMore = computed(() => currentPage.value < totalPages.value);
 type MenuItem = { title: string; icon: string; path: string; childrenPath?: string; children?: any[] };
-const { menuArr } = storeToRefs(usemenuStore);
+const { menuArr, visibleMenuArr } = storeToRefs(usemenuStore);
 let activeSubmenu = ref<string>('');
+const isLiteEdition = ref(false);
 
 // 批量管理状态
 const batchMode = ref(false)
@@ -250,15 +261,15 @@ const getIconActiveState = (itemPath: string) => {
     };
 };
 
-// 分离上下两部分菜单
+// 分离上下两部分菜单（使用 visibleMenuArr 以便 lite 模式过滤 logout）
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
+    return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
         item.path === 'knowledge-bases' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
     );
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
+    return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
         if (item.path === 'knowledge-bases' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat') {
             return false;
         }
@@ -423,9 +434,26 @@ const handleInlineBatchDelete = () => {
 const handleSessionMenuClick = (data: { value: string }, index: number, item: any) => {
     if (data?.value === 'delete') {
         delCard(index, item);
+    } else if (data?.value === 'clearMessages') {
+        clearMessages(item);
     } else if (data?.value === 'batchManage') {
         enterBatchMode()
     }
+};
+
+const clearMessages = (item: any) => {
+    clearSessionMessages(item.id).then((res: any) => {
+        if (res && res.success) {
+            MessagePlugin.success(t('menu.clearMessagesSuccess'));
+            if (item.id === route.params.chatid) {
+                window.dispatchEvent(new CustomEvent('session-messages-cleared', { detail: { sessionId: item.id } }));
+            }
+        } else {
+            MessagePlugin.error(t('menu.clearMessagesFailed'));
+        }
+    }).catch(() => {
+        MessagePlugin.error(t('menu.clearMessagesFailed'));
+    });
 };
 
 const delCard = (index: number, item: any) => {
@@ -522,6 +550,14 @@ onMounted(async () => {
         currentSecondpath.value = `chat/${route.params.chatid}`;
     }
 
+    isLiteEdition.value = authStore.isLiteMode
+    getSystemInfo().then(res => {
+        if (res.data?.edition === 'lite') {
+            isLiteEdition.value = true
+            authStore.setLiteMode(true)
+        }
+    }).catch(() => {})
+    
     // 初始化知识库信息
     const kbId = (route.params as any)?.kbId as string
     if (kbId && isInKnowledgeBase.value) {
@@ -744,6 +780,11 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     transition: width 0.25s ease, min-width 0.25s ease;
     position: relative;
 
+    // macOS Wails 桌面：红绿灯位于 HiddenInset 标题栏区域，需让出顶部空间
+    html.wails-desktop & {
+        padding-top: 30px;
+    }
+
     &--collapsed {
         min-width: 60px;
         width: 60px;
@@ -815,9 +856,20 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         flex: 1;
         min-width: 0;
         overflow: hidden;
+
         .logo{
             width: 134px;
             height: auto;
+        }
+        .lite-badge {
+            margin-left: 2px;
+            align-self: flex-start;
+            margin-top: 2px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--td-text-color-placeholder);
+            user-select: none;
+            white-space: nowrap;
         }
     }
 
@@ -981,6 +1033,11 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         margin-left: 4px;
     }
     
+    @keyframes menuItemFadeIn {
+        from { opacity: 0; transform: translateX(-4px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
     .timeline_header {
         font-family: "PingFang SC";
         font-size: 12px;
@@ -990,6 +1047,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         margin-top: 8px;
         line-height: 20px;
         user-select: none;
+        animation: menuItemFadeIn 0.25s ease-out;
         
         &:first-child {
             margin-top: 4px;
@@ -1000,6 +1058,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         height: 44px;
         padding: 4px 0px 4px 0px;
         box-sizing: border-box;
+        animation: menuItemFadeIn 0.25s ease-out;
     }
 
 
@@ -1040,7 +1099,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         &:hover {
             background: var(--td-bg-color-container-hover);
             color: var(--td-text-color-primary);
-            border-radius: 3px;
+            border-radius: 8px;
 
             .menu-more {
                 color: var(--td-text-color-primary);
@@ -1060,7 +1119,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     .submenu_item_active {
         background: var(--td-brand-color-light) !important;
         color: var(--td-brand-color) !important;
-        border-radius: 3px;
+        border-radius: 8px;
 
         .menu-more {
             color: var(--td-brand-color) !important;
@@ -1083,7 +1142,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 
     .submenu_item_selected {
         background: rgba(7, 192, 95, 0.05) !important;
-        border-radius: 3px;
+        border-radius: 8px;
     }
 
     .batch-checkbox {
@@ -1263,45 +1322,7 @@ html[theme-mode="dark"] .aside_box .menu_item_active .menu_icon img.icon {
     opacity: 1;
 }
 
-// 上传操作下拉菜单样式 - 全局样式（因为 TDesign 的下拉菜单挂载到 body 上）
-// 使用更具体的选择器来匹配上传操作下拉菜单
-.t-popup[data-popper-placement^="right"] {
-    .t-popup__content {
-        .t-dropdown__menu {
-            background: var(--td-bg-color-container) !important;
-            border: 1px solid var(--td-component-stroke) !important;
-            border-radius: 6px !important;
-            box-shadow: var(--td-shadow-2) !important;
-            padding: 4px !important;
-            min-width: 100px !important;
-        }
-
-        .t-dropdown__item {
-            padding: 8px 12px !important;
-            border-radius: 4px !important;
-            margin: 2px 0 !important;
-            transition: all 0.2s ease !important;
-            font-size: 14px !important;
-            color: var(--td-text-color-primary) !important;
-            min-width: auto !important;
-            max-width: none !important;
-            width: auto !important;
-            cursor: pointer !important;
-
-            &:hover {
-                background: var(--td-bg-color-container-hover) !important;
-                color: var(--td-brand-color) !important;
-            }
-
-            .t-dropdown__item-text {
-                color: inherit !important;
-                font-size: 14px !important;
-                line-height: 20px !important;
-                white-space: nowrap !important;
-            }
-        }
-    }
-}
+// 下拉菜单样式已统一至 @/assets/dropdown-menu.less
 
 // 退出登录确认框样式
 :deep(.t-popconfirm) {

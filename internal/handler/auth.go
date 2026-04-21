@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -87,7 +91,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.userService.Register(ctx, &req)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to register user: %v", err)
-		appErr := errors.NewBadRequestError("Registration failed").WithDetails(err.Error())
+		appErr := errors.NewBadRequestError(err.Error())
 		c.Error(appErr)
 		return
 	}
@@ -155,6 +159,161 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	logger.Infof(ctx, "User logged in successfully, email: %s", email)
 	c.JSON(http.StatusOK, response)
+}
+
+// GetOIDCAuthorizationURL godoc
+// @Summary      获取OIDC授权地址
+// @Description  根据后端OIDC配置生成第三方登录跳转地址
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        redirect_uri  query     string  true  "OIDC回调地址"
+// @Success      200           {object}  types.OIDCAuthURLResponse
+// @Failure      400           {object}  errors.AppError  "请求参数错误"
+// @Failure      403           {object}  errors.AppError  "OIDC未启用"
+// @Router       /auth/oidc/url [get]
+func (h *AuthHandler) GetOIDCAuthorizationURL(c *gin.Context) {
+	ctx := c.Request.Context()
+	redirectURI := strings.TrimSpace(c.Query("redirect_uri"))
+	if redirectURI == "" {
+		appErr := errors.NewValidationError("redirect_uri is required")
+		c.Error(appErr)
+		return
+	}
+
+	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, redirectURI)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
+		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetOIDCConfig godoc
+// @Summary      获取OIDC登录配置
+// @Description  返回OIDC是否启用以及provider展示名称，供前端决定是否展示OIDC登录入口
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  types.OIDCConfigResponse
+// @Router       /auth/oidc/config [get]
+func (h *AuthHandler) GetOIDCConfig(c *gin.Context) {
+	providerDisplayName := ""
+	enabled := false
+
+	if h.configInfo != nil && h.configInfo.OIDCAuth != nil {
+		enabled = h.configInfo.OIDCAuth.Enable
+		providerDisplayName = strings.TrimSpace(h.configInfo.OIDCAuth.ProviderDisplayName)
+	}
+
+	c.JSON(http.StatusOK, &types.OIDCConfigResponse{
+		Success:             true,
+		Enabled:             enabled,
+		ProviderDisplayName: providerDisplayName,
+	})
+}
+
+// OIDCRedirectCallback godoc
+// @Summary      OIDC登录重定向回调
+// @Description  接收OIDC provider回调并由后端完成code交换，随后重定向回前端登录页
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        code   query string false "OIDC授权码"
+// @Param        state  query string false "OIDC状态"
+// @Param        error  query string false "OIDC错误码"
+// @Success      302
+// @Router       /auth/oidc/callback [get]
+func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
+	ctx := c.Request.Context()
+	frontendRedirectURI := "/"
+
+	if providerError := strings.TrimSpace(c.Query("error")); providerError != "" {
+		redirectURL := frontendRedirectURI + "#oidc_error=" + urlQueryEscape(providerError)
+		if description := strings.TrimSpace(c.Query("error_description")); description != "" {
+			redirectURL += "&oidc_error_description=" + urlQueryEscape(description)
+		}
+		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+
+	state := strings.TrimSpace(c.Query("state"))
+	decodedState, err := decodeOIDCState(state)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to decode OIDC state: %v", err)
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("invalid_state"))
+		return
+	}
+
+	code := strings.TrimSpace(c.Query("code"))
+	if code == "" {
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("missing_code"))
+		return
+	}
+
+	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI))
+	if err != nil {
+		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))
+		return
+	}
+	if !resp.Success {
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(resp.Message))
+		return
+	}
+
+	payload, err := encodeOIDCCallbackPayload(resp)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to encode OIDC callback payload: %v", err)
+		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
+		return
+	}
+
+	c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_result="+urlQueryEscape(payload))
+}
+
+func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error) {
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+type oidcStatePayload struct {
+	Nonce       string `json:"nonce"`
+	RedirectURI string `json:"redirect_uri,omitempty"`
+}
+
+func decodeOIDCState(raw string) (*oidcStatePayload, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, err
+	}
+	var payload oidcStatePayload
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(payload.RedirectURI) == "" {
+		return nil, errors.NewValidationError("state.redirect_uri is required")
+	}
+	return &payload, nil
+}
+
+func urlQueryEscape(value string) string {
+	replacer := strings.NewReplacer(
+		"%", "%25",
+		" ", "%20",
+		"#", "%23",
+		"&", "%26",
+		"+", "%2B",
+		"=", "%3D",
+		"?", "%3F",
+	)
+	return replacer.Replace(value)
 }
 
 // Logout godoc
@@ -344,6 +503,79 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Password changed successfully",
+	})
+}
+
+// AutoSetup godoc
+// @Summary      自动初始化（Lite 桌面版）
+// @Description  Lite 版专用：首次启动时自动创建默认用户和租户并返回令牌，后续启动直接签发令牌，免除手动注册/登录流程
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  types.LoginResponse
+// @Failure      403  {object}  errors.AppError  "非 Lite 版本"
+// @Router       /auth/auto-setup [post]
+func (h *AuthHandler) AutoSetup(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	if Edition != "lite" {
+		appErr := errors.NewForbiddenError("auto-setup is only available in lite edition")
+		c.Error(appErr)
+		return
+	}
+
+	const defaultEmail = "admin@weknora.local"
+
+	user, _ := h.userService.GetUserByEmail(ctx, defaultEmail)
+	if user == nil {
+		logger.Info(ctx, "Auto-setup: creating default user and tenant for lite edition")
+
+		randomBytes := make([]byte, 24)
+		if _, err := rand.Read(randomBytes); err != nil {
+			appErr := errors.NewInternalServerError("auto-setup failed: unable to generate credentials")
+			c.Error(appErr)
+			return
+		}
+		randomPassword := base64.RawURLEncoding.EncodeToString(randomBytes)
+		randomUsername := fmt.Sprintf("user_%s", base64.RawURLEncoding.EncodeToString(randomBytes[:6]))
+
+		_, err := h.userService.Register(ctx, &types.RegisterRequest{
+			Username: randomUsername,
+			Email:    defaultEmail,
+			Password: randomPassword,
+		})
+		if err != nil {
+			logger.Errorf(ctx, "Auto-setup: failed to register default user: %v", err)
+			appErr := errors.NewInternalServerError("auto-setup failed").WithDetails(err.Error())
+			c.Error(appErr)
+			return
+		}
+		user, _ = h.userService.GetUserByEmail(ctx, defaultEmail)
+		if user == nil {
+			appErr := errors.NewInternalServerError("auto-setup failed: user not found after registration")
+			c.Error(appErr)
+			return
+		}
+	}
+
+	accessToken, refreshToken, err := h.userService.GenerateTokens(ctx, user)
+	if err != nil {
+		logger.Errorf(ctx, "Auto-setup: failed to generate tokens: %v", err)
+		appErr := errors.NewInternalServerError("auto-setup failed").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	tenant, _ := h.tenantService.GetTenantByID(ctx, user.TenantID)
+
+	logger.Info(ctx, "Auto-setup: completed successfully")
+	c.JSON(http.StatusOK, &types.LoginResponse{
+		Success:      true,
+		Message:      "Auto-setup successful",
+		User:         user,
+		Tenant:       tenant,
+		Token:        accessToken,
+		RefreshToken: refreshToken,
 	})
 }
 

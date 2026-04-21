@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
@@ -40,9 +44,38 @@ func (c *OllamaChat) convertMessages(messages []Message) []ollamaapi.Message {
 		if msg.Role == "tool" {
 			msgOllama.ToolName = msg.Name
 		}
+		if len(msg.Images) > 0 && msg.Role == "user" {
+			for _, imgURL := range msg.Images {
+				if imgData := resolveImageForOllama(imgURL); imgData != nil {
+					msgOllama.Images = append(msgOllama.Images, imgData)
+				}
+			}
+		}
 		ollamaMessages = append(ollamaMessages, msgOllama)
 	}
 	return ollamaMessages
+}
+
+// resolveImageForOllama resolves an image URL into raw bytes for Ollama.
+// Handles local serving paths (/files/...), data URIs, and remote HTTP URLs.
+func resolveImageForOllama(imageURL string) ollamaapi.ImageData {
+	if data := resolveImageURLForOllama(imageURL); data != nil {
+		return data
+	}
+	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURL)
+		if err != nil {
+			return nil
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+		if err != nil {
+			return nil
+		}
+		return data
+	}
+	return nil
 }
 
 // buildChatRequest 构建聊天请求参数
@@ -60,9 +93,7 @@ func (c *OllamaChat) buildChatRequest(messages []Message, opts *ChatOptions, isS
 
 	// 添加可选参数
 	if opts != nil {
-		if opts.Temperature > 0 {
-			chatReq.Options["temperature"] = opts.Temperature
-		}
+		chatReq.Options["temperature"] = opts.Temperature
 		if opts.TopP > 0 {
 			chatReq.Options["top_p"] = opts.TopP
 		}
@@ -123,18 +154,17 @@ func (c *OllamaChat) Chat(ctx context.Context, messages []Message, opts *ChatOpt
 		return nil, fmt.Errorf("聊天请求失败: %w", err)
 	}
 
-	// 构建响应
+	totalTokens := promptTokens + completionTokens
+	logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
+		c.modelName, promptTokens, completionTokens, totalTokens)
+
 	return &types.ChatResponse{
 		Content:   responseContent,
 		ToolCalls: toolCalls,
-		Usage: struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		}{
+		Usage: types.TokenUsage{
 			PromptTokens:     promptTokens,
 			CompletionTokens: completionTokens,
-			TotalTokens:      promptTokens + completionTokens,
+			TotalTokens:      totalTokens,
 		},
 	}, nil
 }
@@ -198,7 +228,17 @@ func (c *OllamaChat) ChatStream(
 					Done:         false,
 				}
 
-				// Extract and stream content from special tools (complete, not incremental)
+				// Ollama returns tool calls as complete objects (not incremental deltas).
+				// Log this so we can trace non-streaming answer delivery.
+				for _, tc := range resp.Message.ToolCalls {
+					if tc.Function.Name == "final_answer" || tc.Function.Name == "thinking" {
+						argsBytes, _ := json.Marshal(tc.Function.Arguments)
+						logger.Warnf(ctx, "[Ollama Stream] Tool %q arrived non-incrementally (%d bytes args), "+
+							"answer will not be token-streamed to frontend",
+							tc.Function.Name, len(argsBytes))
+					}
+				}
+
 				for _, tc := range resp.Message.ToolCalls {
 					switch tc.Function.Name {
 					case "final_answer":
@@ -229,9 +269,20 @@ func (c *OllamaChat) ChatStream(
 			}
 
 			if resp.Done {
+				var usage *types.TokenUsage
+				if resp.PromptEvalCount > 0 || resp.EvalCount > 0 {
+					usage = &types.TokenUsage{
+						PromptTokens:     resp.PromptEvalCount,
+						CompletionTokens: resp.EvalCount,
+						TotalTokens:      resp.PromptEvalCount + resp.EvalCount,
+					}
+					logger.Infof(ctx, "[LLM Usage] model=%s, prompt_tokens=%d, completion_tokens=%d, total_tokens=%d",
+						c.modelName, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+				}
 				streamChan <- types.StreamResponse{
 					ResponseType: types.ResponseTypeAnswer,
 					Done:         true,
+					Usage:        usage,
 				}
 			}
 

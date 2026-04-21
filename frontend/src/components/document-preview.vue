@@ -1,11 +1,13 @@
 // @ts-nocheck
 <script setup lang="ts">
-import { ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent, onMounted } from 'vue';
+import { ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
 import { MessagePlugin } from 'tdesign-vue-next';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import { useI18n } from 'vue-i18n';
+import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security';
+
 
 const VueOfficePptx = defineAsyncComponent(() => import('@vue-office/pptx'));
 
@@ -20,7 +22,7 @@ const props = defineProps<{
 
 const loading = ref(false);
 const error = ref('');
-const previewType = ref<'pdf' | 'docx' | 'image' | 'excel' | 'text' | 'markdown' | 'pptx' | 'unsupported'>('unsupported');
+const previewType = ref<'pdf' | 'docx' | 'image' | 'excel' | 'text' | 'markdown' | 'pptx' | 'audio' | 'unsupported'>('unsupported');
 const blobUrl = ref('');
 const textContent = ref('');
 const highlightedCode = ref('');
@@ -33,29 +35,15 @@ const imageNaturalHeight = ref(0);
 let loadedForId = '';
 
 const isFullscreen = ref(false);
-const previewContainerRef = ref<HTMLElement | null>(null);
 
 function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    if (previewContainerRef.value?.requestFullscreen) {
-      previewContainerRef.value.requestFullscreen().catch((err: any) => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`);
-      });
-    }
+  isFullscreen.value = !isFullscreen.value;
+  if (isFullscreen.value) {
+    document.body.style.overflow = 'hidden';
   } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    }
+    document.body.style.overflow = '';
   }
 }
-
-function handleFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement;
-}
-
-onMounted(() => {
-  document.addEventListener('fullscreenchange', handleFullscreenChange);
-});
 
 
 const fileTypeMap: Record<string, typeof previewType.value> = {};
@@ -68,6 +56,7 @@ const fileTypeMap: Record<string, typeof previewType.value> = {};
 ['txt', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'go',
  'cpp', 'c', 'h', 'sh', 'yaml', 'yml', 'ini', 'conf', 'log', 'sql', 'rs', 'rb', 'php',
  'swift', 'kt', 'scala', 'r', 'lua', 'pl', 'toml'].forEach(t => fileTypeMap[t] = 'text');
+['mp3', 'wav', 'm4a', 'flac', 'ogg'].forEach(t => fileTypeMap[t] = 'audio');
 
 const mimeTypeMap: Record<string, string> = {
   pdf: 'application/pdf',
@@ -86,6 +75,8 @@ const mimeTypeMap: Record<string, string> = {
   html: 'text/html', css: 'text/css',
   js: 'text/javascript', ts: 'text/typescript',
   py: 'text/x-python', java: 'text/x-java', go: 'text/x-go',
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4',
+  flac: 'audio/flac', ogg: 'audio/ogg',
 };
 
 function getMimeType(ft: string): string {
@@ -184,7 +175,7 @@ async function renderExcel(blob: Blob, fileType?: string) {
     html += sheetHtml;
     html += `</div>`;
   });
-  excelHtml.value = html;
+  excelHtml.value = sanitizeHTML(html);
 }
 
 async function renderText(blob: Blob, fileType: string) {
@@ -205,24 +196,37 @@ async function renderText(blob: Blob, fileType: string) {
 async function renderMarkdown(blob: Blob) {
   const { marked } = await import('marked');
   const text = await blob.text();
+
+  // 텍스트 내용이 유효한지 확인합니다.
+  if (!text || typeof text !== 'string') {
+    markdownHtml.value = '<p style="color: var(--td-text-color-disabled); text-align: center; padding: 20px;">문서 내용이 비어 있습니다</p>';
+    return;
+  }
+
   marked.use({
     breaks: true,
     gfm: true,
   });
   const renderer = new marked.Renderer();
-  renderer.code = function (code, infostring) {
-    const lang = (infostring || '').trim();
+  renderer.code = function ({text, lang}) {
+    // 빈 값 방지: text가 undefined 또는 null인 경우를 처리합니다.
+    if (!text || typeof text !== 'string') {
+      text = '';
+    }
+
     let highlighted = '';
     if (lang && hljs.getLanguage(lang)) {
-      try { highlighted = hljs.highlight(code, { language: lang }).value; }
-      catch { highlighted = hljs.highlightAuto(code).value; }
+      try { highlighted = hljs.highlight(text, { language: lang }).value; }
+      catch { highlighted = hljs.highlightAuto(text).value; }
     } else {
-      highlighted = hljs.highlightAuto(code).value;
+      highlighted = hljs.highlightAuto(text).value;
     }
     return `<pre><code class="hljs">${highlighted}</code></pre>`;
   };
   marked.use({ renderer });
-  markdownHtml.value = marked.parse(text);
+  const safeText = safeMarkdownToHTML(text);
+  const rawHtml = marked.parse(safeText) as string;
+  markdownHtml.value = sanitizeHTML(rawHtml);
 }
 
 function onImageLoad(e: Event) {
@@ -284,6 +288,10 @@ async function loadPreview() {
         pptxData.value = await blob.arrayBuffer();
         break;
       }
+      case 'audio': {
+        blobUrl.value = URL.createObjectURL(blob);
+        break;
+      }
     }
   } catch (err: any) {
     console.error('Document preview failed:', err);
@@ -322,13 +330,13 @@ watch(
 );
 
 onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.body.style.overflow = '';
   cleanup();
 });
 </script>
 
 <template>
-  <div ref="previewContainerRef" class="document-preview" :class="{ 'is-fullscreen': isFullscreen }">
+  <div class="document-preview" :class="{ 'is-fullscreen': isFullscreen }">
     <!-- Toolbar -->
     <div class="preview-toolbar" v-if="!loading && !error && previewType !== 'unsupported'">
       <t-space size="small">
@@ -401,6 +409,17 @@ onUnmounted(() => {
     <div v-else-if="previewType === 'text' && highlightedCode" class="preview-text">
       <pre class="code-preview"><code class="hljs" v-html="highlightedCode"></code></pre>
     </div>
+
+    <!-- Audio -->
+    <div v-else-if="previewType === 'audio' && blobUrl" class="preview-audio">
+      <div class="audio-wrapper">
+        <t-icon name="sound" size="48px" />
+        <p class="audio-filename">{{ fileName }}</p>
+        <audio controls :src="blobUrl" class="audio-element">
+          {{ $t('preview.audioNotSupported') }}
+        </audio>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -439,17 +458,37 @@ onUnmounted(() => {
 }
 
 .is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2001;
   background: var(--td-bg-color-container);
   padding: 0;
   overflow-y: auto;
-  z-index: 1000;
 
-  .preview-container {
-    max-height: 100vh;
+  .preview-toolbar {
+    position: fixed;
+    top: 12px;
+    right: 32px;
+    z-index: 2002;
   }
 
-  .preview-pdf, .preview-pptx {
+  .preview-pdf {
     height: 100vh;
+  }
+
+  .preview-pptx {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+    border: none;
+
+    :deep(.pptx-preview-wrapper) {
+      height: auto !important;
+      overflow-y: visible !important;
+    }
   }
 
   .preview-docx {
@@ -461,6 +500,22 @@ onUnmounted(() => {
       height: 100%;
       flex: 1;
     }
+  }
+
+  .preview-image {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    .image-wrapper img {
+      max-height: calc(100vh - 80px);
+    }
+  }
+
+  .preview-excel .excel-container,
+  .preview-markdown,
+  .preview-text .code-preview {
+    max-height: 100vh;
   }
 }
 
@@ -563,12 +618,17 @@ onUnmounted(() => {
 
 // ── PPTX ──
 .preview-pptx {
-  height: @preview-max-h;
+  max-height: @preview-max-h;
   min-height: 500px;
   border: 1px solid @border-color;
   border-radius: @border-radius;
-  overflow: hidden;
+  overflow: auto;
   background: @bg-subtle;
+
+  :deep(.pptx-preview-wrapper) {
+    height: auto !important;
+    overflow-y: visible !important;
+  }
 }
 
 // ── Excel ──
@@ -591,6 +651,22 @@ onUnmounted(() => {
       display: block;
       background: transparent;
     }
+  }
+}
+
+// ── Audio ──
+.preview-audio {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+  .audio-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    color: @text-secondary;
+    .audio-filename { font-size: 14px; color: @text-primary; margin: 0; }
+    .audio-element { width: 100%; max-width: 480px; }
   }
 }
 
@@ -670,16 +746,44 @@ onUnmounted(() => {
 
 :deep(.docx-preview-wrapper) {
   padding: 20px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto; // 如果内容过宽，允许水平滚动而不是溢出
+  
+  // 约束所有子元素的宽度
+  * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
+  // 特别处理表格
+  table {
+    width: 100%;
+    table-layout: auto;
+    word-wrap: break-word;
+  }
+  
+  // 处理图片
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+  
+  // 处理可能的固定宽度元素
+  [style*="width"] {
+    max-width: 100% !important;
+  }
 }
 
 :deep(.vue-office-pptx) {
   width: 100%;
-  height: 100%;
+  min-height: 100%;
 }
 
 :deep(.vue-office-pptx-main) {
   width: 100%;
-  height: 100%;
+  min-height: 100%;
 }
 
 :deep(.excel-sheet) {

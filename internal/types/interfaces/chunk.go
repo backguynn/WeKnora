@@ -6,6 +6,12 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+// ChunkImageInfo holds (knowledge_id, image_info) pairs for image cleanup before chunk deletion.
+type ChunkImageInfo struct {
+	KnowledgeID string `gorm:"column:knowledge_id"`
+	ImageInfo   string `gorm:"column:image_info"`
+}
+
 // ChunkRepository defines the interface for chunk repository operations
 type ChunkRepository interface {
 	// CreateChunks creates chunks
@@ -58,6 +64,8 @@ type ChunkRepository interface {
 	DeleteChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string) error
 	// DeleteByKnowledgeList deletes all chunks for a knowledge list
 	DeleteByKnowledgeList(ctx context.Context, tenantID uint64, knowledgeIDs []string) error
+	// ListImageInfoByKnowledgeIDs returns non-empty (knowledge_id, image_info) pairs for image cleanup.
+	ListImageInfoByKnowledgeIDs(ctx context.Context, tenantID uint64, knowledgeIDs []string) ([]ChunkImageInfo, error)
 	// MoveChunksByKnowledgeID updates knowledge_base_id for all chunks of a knowledge item
 	MoveChunksByKnowledgeID(ctx context.Context, tenantID uint64, knowledgeID string, targetKBID string) error
 	// DeleteChunksByTagID deletes all chunks with the specified tag ID
@@ -73,6 +81,9 @@ type ChunkRepository interface {
 	// ListAllFAQChunksWithMetadataByKnowledgeBaseID lists all FAQ chunks for a knowledge base ID
 	// returns ID and Metadata fields for duplicate question checking
 	ListAllFAQChunksWithMetadataByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) ([]*types.Chunk, error)
+	// FindFAQChunkWithDuplicateQuestion finds a single FAQ chunk whose standard_question or
+	// similar_questions overlap with the given question list. Returns nil if no duplicate found.
+	FindFAQChunkWithDuplicateQuestion(ctx context.Context, tenantID uint64, kbID string, excludeChunkID string, questions []string) (*types.Chunk, error)
 	// ListAllFAQChunksForExport lists all FAQ chunks for export with full metadata, tag_id, is_enabled, and flags
 	ListAllFAQChunksForExport(ctx context.Context, tenantID uint64, knowledgeID string) ([]*types.Chunk, error)
 	// UpdateChunkFlagsBatch updates flags for multiple chunks in batch using a single SQL statement.
@@ -86,6 +97,16 @@ type ChunkRepository interface {
 	// FAQChunkDiff compares FAQ chunks between two knowledge bases and returns the differences.
 	// Returns: chunksToAdd (content_hash in src but not in dst), chunksToDelete (content_hash in dst but not in src)
 	FAQChunkDiff(ctx context.Context, srcTenantID uint64, srcKBID string, dstTenantID uint64, dstKBID string) (chunksToAdd []string, chunksToDelete []string, err error)
+
+	// ListRecommendedFAQChunks lists FAQ chunks with the recommended flag set.
+	// Filter by kbIDs and/or knowledgeIDs. At least one of them must be non-empty.
+	// Returns up to `limit` chunks sorted by updated_at descending.
+	ListRecommendedFAQChunks(ctx context.Context, tenantID uint64, kbIDs []string, knowledgeIDs []string, limit int) ([]*types.Chunk, error)
+
+	// ListRecentDocumentChunksWithQuestions lists recent document chunks that have generated questions.
+	// Filter by kbIDs and/or knowledgeIDs. At least one of them must be non-empty.
+	// Returns up to `limit` chunks sorted by updated_at descending.
+	ListRecentDocumentChunksWithQuestions(ctx context.Context, tenantID uint64, kbIDs []string, knowledgeIDs []string, limit int) ([]*types.Chunk, error)
 }
 
 // ChunkService defines the interface for chunk service operations

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
+
+// regThinkIndex matches <think>...</think> blocks for stripping from KB index content.
+var regThinkIndex = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
 // messageService implements the MessageService interface for managing messaging operations
 // It handles creating, retrieving, updating, and deleting messages within sessions.
@@ -237,6 +241,16 @@ func (s *messageService) UpdateMessage(ctx context.Context, message *types.Messa
 	return nil
 }
 
+// UpdateMessageImages updates only the images JSONB column for a message.
+func (s *messageService) UpdateMessageImages(ctx context.Context, sessionID, messageID string, images types.MessageImages) error {
+	return s.messageRepo.UpdateMessageImages(ctx, sessionID, messageID, images)
+}
+
+// UpdateMessageRenderedContent updates the rendered_content column for a user message.
+func (s *messageService) UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error {
+	return s.messageRepo.UpdateMessageRenderedContent(ctx, sessionID, messageID, renderedContent)
+}
+
 // DeleteMessage removes a message from a session, also cleaning up its Knowledge entry in the chat history KB.
 func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, messageID string) error {
 	logger.Info(ctx, "Start deleting message")
@@ -279,6 +293,29 @@ func (s *messageService) DeleteMessage(ctx context.Context, sessionID string, me
 	return nil
 }
 
+// ClearSessionMessages deletes all messages in a session, along with their chat history KB entries.
+func (s *messageService) ClearSessionMessages(ctx context.Context, sessionID string) error {
+	logger.Infof(ctx, "Start clearing all messages for session: %s", sessionID)
+
+	tenantID := types.MustTenantIDFromContext(ctx)
+	if _, err := s.sessionRepo.Get(ctx, tenantID, sessionID); err != nil {
+		logger.Errorf(ctx, "Failed to get session: %v", err)
+		return err
+	}
+
+	// Async cleanup: delete associated Knowledge entries from the chat history KB
+	bgCtx := context.WithoutCancel(ctx)
+	go s.DeleteSessionKnowledge(bgCtx, sessionID)
+
+	if err := s.messageRepo.DeleteMessagesBySessionID(ctx, sessionID); err != nil {
+		logger.Errorf(ctx, "Failed to delete messages for session %s: %v", sessionID, err)
+		return err
+	}
+
+	logger.Infof(ctx, "All messages cleared for session: %s", sessionID)
+	return nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Chat History Knowledge Base — Configuration-driven (via Tenant.ChatHistoryConfig)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,7 +351,13 @@ func (s *messageService) getRetrievalConfig(ctx context.Context) *types.Retrieva
 // then links the message to the Knowledge entry via the knowledge_id field.
 // The KB ID is read from the tenant's ChatHistoryConfig — if not configured, indexing is skipped.
 func (s *messageService) IndexMessageToKB(ctx context.Context, userQuery string, assistantAnswer string, messageID string, sessionID string) {
-	if strings.TrimSpace(userQuery) == "" && strings.TrimSpace(assistantAnswer) == "" {
+	// Strip thinking content (<think>...</think>) before indexing to avoid
+	// polluting the knowledge base with intermediate reasoning that would
+	// degrade retrieval quality.
+	assistantAnswer = regThinkIndex.ReplaceAllString(assistantAnswer, "")
+	assistantAnswer = strings.TrimSpace(assistantAnswer)
+
+	if strings.TrimSpace(userQuery) == "" && assistantAnswer == "" {
 		return
 	}
 
@@ -331,7 +374,7 @@ func (s *messageService) IndexMessageToKB(ctx context.Context, userQuery string,
 	passages = append(passages, passage)
 
 	// Use async (non-sync) passage creation so it doesn't block the response
-	knowledge, err := s.knowService.CreateKnowledgeFromPassage(ctx, cfg.KnowledgeBaseID, passages)
+	knowledge, err := s.knowService.CreateKnowledgeFromPassage(ctx, cfg.KnowledgeBaseID, passages, "")
 	if err != nil {
 		logger.Warnf(ctx, "Failed to index message to chat history KB: %v", err)
 		return

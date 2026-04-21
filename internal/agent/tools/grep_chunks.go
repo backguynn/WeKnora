@@ -56,7 +56,7 @@ grep_chunks scans enabled chunks across the specified knowledge bases and return
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "pattern": {
+    "patterns": {
       "type": "array",
       "description": "REQUIRED: Text patterns to search for. Can be a single pattern or multiple patterns. Treated as literal text (fixed string matching). Results match any of the patterns (OR logic).",
       "items": {
@@ -79,13 +79,13 @@ grep_chunks scans enabled chunks across the specified knowledge bases and return
       "maximum": 200
     }
   },
-  "required": ["pattern"]
+  "required": ["patterns"]
 }`),
 }
 
 // GrepChunksInput defines the input parameters for grep chunks tool
 type GrepChunksInput struct {
-	Pattern          []string `json:"pattern" `
+	Patterns         []string `json:"patterns" `
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
 	MaxResults       int      `json:"max_results,omitempty"`
 }
@@ -122,11 +122,11 @@ func (t *GrepChunksTool) Execute(ctx context.Context, args json.RawMessage) (*ty
 	}
 
 	// Parse pattern parameter (required) - support multiple patterns
-	patterns := input.Pattern
+	patterns := input.Patterns
 
 	// Validate patterns
 	if len(patterns) == 0 {
-		logger.Errorf(ctx, "[Tool][GrepChunks] Missing or invalid pattern parameter")
+		logger.Errorf(ctx, "[Tool][GrepChunks] Missing or invalid patterns parameter")
 		return &types.ToolResult{
 			Success: false,
 			Error:   "pattern parameter is required and must contain at least one non-empty pattern",
@@ -273,30 +273,31 @@ func (t *GrepChunksTool) searchChunks(
 	knowledgeIDs []string,
 	kbTenantMap map[string]uint64,
 ) ([]chunkWithTitle, int64, error) {
-	// Safety check: must have either kbIDs or knowledgeIDs
 	if len(kbIDs) == 0 && len(knowledgeIDs) == 0 {
 		logger.Warnf(ctx, "[Tool][GrepChunks] No kbIDs or knowledgeIDs specified, returning empty results")
 		return nil, 0, nil
 	}
 
-	// Build base query
-	// Use knowledge_base_id filter combined with tenant_id to ensure data isolation
+	// PostgreSQL uses ILIKE for case-insensitive matching;
+	// MySQL and SQLite LIKE is already case-insensitive under default collation.
+	likeOp := "LIKE"
+	if t.db.Dialector.Name() == "postgres" {
+		likeOp = "ILIKE"
+	}
+
 	query := t.db.Debug().WithContext(ctx).Table("chunks").
-		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, knowledges.title as knowledge_title, COUNT(*) OVER (PARTITION BY chunks.knowledge_id) AS total_chunk_count").
-		Joins("LEFT JOIN knowledges ON chunks.knowledge_id = knowledges.id").
+		Select("chunks.id, chunks.content, chunks.chunk_index, chunks.knowledge_id, "+
+			"chunks.knowledge_base_id, chunks.chunk_type, chunks.created_at, "+
+			"knowledges.title as knowledge_title").
+		Joins("JOIN knowledges ON chunks.knowledge_id = knowledges.id").
 		Where("chunks.is_enabled = ?", true).
 		Where("chunks.deleted_at IS NULL").
 		Where("knowledges.deleted_at IS NULL")
 
-	// Build tenant-aware KB filter: (kb_id = X AND tenant_id = Y) OR (kb_id = Z AND tenant_id = W) ...
-	// This ensures we only access chunks from KBs we have permission for, with correct tenant scope
 	if len(knowledgeIDs) > 0 {
-		// For specific knowledge IDs, filter directly by knowledge_id
-		// Permission already checked when building searchTargets
 		query = query.Where("chunks.knowledge_id IN ?", knowledgeIDs)
 		logger.Infof(ctx, "[Tool][GrepChunks] Filtering by %d specific knowledge IDs", len(knowledgeIDs))
 	} else if len(kbIDs) > 0 {
-		// Build OR conditions for each KB with its tenant
 		var conditions []string
 		var args []interface{}
 		for _, kbID := range kbIDs {
@@ -314,37 +315,66 @@ func (t *GrepChunksTool) searchChunks(
 		}
 	}
 
-	// Apply pattern matching (case-insensitive fixed string matching, OR logic for multiple patterns)
 	if len(patterns) == 1 {
-		query = query.Where("chunks.content ILIKE ?", "%"+patterns[0]+"%")
+		query = query.Where("chunks.content "+likeOp+" ?", "%"+patterns[0]+"%")
 	} else {
-		// Multiple patterns: use OR logic
 		var conditions []string
 		var args []interface{}
 		for _, pattern := range patterns {
-			conditions = append(conditions, "chunks.content ILIKE ?")
+			conditions = append(conditions, "chunks.content "+likeOp+" ?")
 			args = append(args, "%"+pattern+"%")
 		}
 		query = query.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}
 
-	// Count total matches first (for count_only mode)
-	var totalCount int64
-	if err := query.Count(&totalCount).Error; err != nil {
-		logger.Warnf(ctx, "[Tool][GrepChunks] Failed to count matches: %v", err)
-	}
+	const maxFetchLimit = 500
 
-	// Fetch results
 	var results []chunkWithTitle
-	if err := query.Order("chunks.created_at DESC").Find(&results).Error; err != nil {
+	if err := query.Order("chunks.created_at DESC").Limit(maxFetchLimit).Find(&results).Error; err != nil {
 		logger.Errorf(ctx, "[Tool][GrepChunks] Failed to fetch results: %v", err)
 		return nil, 0, err
 	}
 
-	return results, totalCount, nil
+	if len(results) > 0 {
+		knowledgeIDSet := make(map[string]struct{})
+		for _, r := range results {
+			if r.KnowledgeID != "" {
+				knowledgeIDSet[r.KnowledgeID] = struct{}{}
+			}
+		}
+		uniqueKnowledgeIDs := make([]string, 0, len(knowledgeIDSet))
+		for kid := range knowledgeIDSet {
+			uniqueKnowledgeIDs = append(uniqueKnowledgeIDs, kid)
+		}
+
+		type countRow struct {
+			KnowledgeID string `gorm:"column:knowledge_id"`
+			Count       int    `gorm:"column:cnt"`
+		}
+		var counts []countRow
+		if err := t.db.WithContext(ctx).Table("chunks").
+			Select("knowledge_id, COUNT(*) AS cnt").
+			Where("knowledge_id IN ?", uniqueKnowledgeIDs).
+			Where("is_enabled = ?", true).
+			Where("deleted_at IS NULL").
+			Group("knowledge_id").
+			Find(&counts).Error; err != nil {
+			logger.Warnf(ctx, "[Tool][GrepChunks] Failed to fetch chunk counts, skipping: %v", err)
+		} else {
+			countMap := make(map[string]int, len(counts))
+			for _, c := range counts {
+				countMap[c.KnowledgeID] = c.Count
+			}
+			for i := range results {
+				results[i].TotalChunkCount = countMap[results[i].KnowledgeID]
+			}
+		}
+	}
+
+	return results, int64(len(results)), nil
 }
 
-// formatOutput formats the search results for display (grep-style output)
+// formatOutput formats the search results as XML
 func (t *GrepChunksTool) formatOutput(
 	ctx context.Context,
 	results []knowledgeAggregation,
@@ -352,46 +382,37 @@ func (t *GrepChunksTool) formatOutput(
 	patterns []string,
 	countOnly bool,
 ) string {
-	var output strings.Builder
+	var b strings.Builder
 
-	// If count_only mode, just return the count
 	if countOnly {
-		output.WriteString(fmt.Sprintf("%d\n", totalCount))
-		return output.String()
+		b.WriteString(fmt.Sprintf("<grep_results count=\"%d\" />\n", totalCount))
+		return b.String()
 	}
 
-	// Show search info
-	if len(patterns) == 1 {
-		output.WriteString(fmt.Sprintf("Pattern: '%s' (case-insensitive)\n", patterns[0]))
-	} else {
-		output.WriteString(fmt.Sprintf("Patterns (%d): %v (case-insensitive, OR logic)\n", len(patterns), patterns))
+	b.WriteString(fmt.Sprintf("<grep_results match_count=\"%d\">\n", len(results)))
+	for _, p := range patterns {
+		b.WriteString(fmt.Sprintf("<pattern>%s</pattern>\n", p))
 	}
-	output.WriteString(fmt.Sprintf("Matches: %d knowledge item(s)\n\n", len(results)))
 
 	if len(results) == 0 {
-		output.WriteString("No matches found.\n")
-		return output.String()
+		b.WriteString("</grep_results>")
+		return b.String()
 	}
 
-	for idx, result := range results {
-		var patternSummaries []string
+	for _, result := range results {
+		b.WriteString(fmt.Sprintf("<match knowledge_id=\"%s\" title=\"%s\" chunk_hits=\"%d\" chunk_total=\"%d\">\n",
+			result.KnowledgeID, result.KnowledgeTitle, result.ChunkHitCount, result.TotalChunkCount))
 		for _, pattern := range patterns {
 			count := result.PatternCounts[pattern]
-			patternSummaries = append(patternSummaries, fmt.Sprintf("%s=%d", pattern, count))
+			if count > 0 {
+				b.WriteString(fmt.Sprintf("<pattern_hit pattern=\"%s\" count=\"%d\" />\n", pattern, count))
+			}
 		}
-
-		output.WriteString(
-			fmt.Sprintf("%d) knowledge_id=%s | title=%s | chunk_hits=%d | chunk_total=%d | pattern_hits=[%s]\n",
-				idx+1,
-				result.KnowledgeID,
-				result.KnowledgeTitle,
-				result.ChunkHitCount,
-				result.TotalChunkCount,
-				strings.Join(patternSummaries, ", "),
-			),
-		)
+		b.WriteString("</match>\n")
 	}
-	return output.String()
+
+	b.WriteString("</grep_results>")
+	return b.String()
 }
 
 type knowledgeAggregation struct {

@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
@@ -17,10 +19,14 @@ import (
 
 // 无需认证的API列表
 var noAuthAPI = map[string][]string{
-	"/health":               {"GET"},
-	"/api/v1/auth/register": {"POST"},
-	"/api/v1/auth/login":    {"POST"},
-	"/api/v1/auth/refresh":  {"POST"},
+	"/health":                    {"GET"},
+	"/api/v1/auth/register":      {"POST"},
+	"/api/v1/auth/login":         {"POST"},
+	"/api/v1/auth/auto-setup":    {"POST"},
+	"/api/v1/auth/oidc/config":   {"GET"},
+	"/api/v1/auth/oidc/url":      {"GET"},
+	"/api/v1/auth/oidc/callback": {"GET"},
+	"/api/v1/auth/refresh":       {"POST"},
 }
 
 // 检查请求是否在无需认证的API列表中
@@ -173,7 +179,7 @@ func Auth(
 				return
 			}
 
-			if t == nil || t.APIKey != apiKey {
+			if t == nil || subtle.ConstantTimeCompare([]byte(t.APIKey), []byte(apiKey)) != 1 {
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"error": "Unauthorized: invalid API key",
 				})
@@ -190,16 +196,25 @@ func Auth(
 				types.TenantInfoContextKey, t,
 			)
 
-			// 通过 TenantID 关联查询用户
+			// 通过 TenantID 关联查询用户；找不到时构造系统虚拟用户，
+			// 确保所有依赖 UserContextKey 的下游 handler 正常工作。
 			user, err := userService.GetUserByTenantID(c.Request.Context(), tenantID)
-			if err == nil && user != nil {
-				c.Set(types.UserContextKey.String(), user)
-				c.Set(types.UserIDContextKey.String(), user.ID)
-				ctx = context.WithValue(
-					context.WithValue(ctx, types.UserContextKey, user),
-					types.UserIDContextKey, user.ID,
-				)
+			if err != nil || user == nil {
+				user = &types.User{
+					ID:       fmt.Sprintf("system-%d", tenantID),
+					Username: fmt.Sprintf("system-%d", tenantID),
+					Email:    fmt.Sprintf("system-%d@api-key.local", tenantID),
+					TenantID: tenantID,
+					IsActive: true,
+				}
+				log.Printf("No user found for tenant %d via API key, using synthetic system user %s", tenantID, user.ID)
 			}
+			c.Set(types.UserContextKey.String(), user)
+			c.Set(types.UserIDContextKey.String(), user.ID)
+			ctx = context.WithValue(
+				context.WithValue(ctx, types.UserContextKey, user),
+				types.UserIDContextKey, user.ID,
+			)
 
 			c.Request = c.Request.WithContext(ctx)
 			c.Next()

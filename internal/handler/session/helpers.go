@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/event"
@@ -11,6 +12,47 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 )
+
+// convertImageAttachments converts ImageAttachment slice to types.MessageImages
+func convertImageAttachments(items []ImageAttachment) types.MessageImages {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make(types.MessageImages, len(items))
+	for i, item := range items {
+		result[i] = types.MessageImage{
+			URL:     item.URL,
+			Caption: item.Caption,
+		}
+	}
+	return result
+}
+
+// extractImageURLsAndOCRText extracts image references and concatenated analysis text.
+// For LLM consumption it prefers the raw Data (data URI) when available so that
+// image_resolve can skip the disk round-trip; falls back to the storage URL otherwise.
+func extractImageURLsAndOCRText(images []ImageAttachment) (urls []string, ocrText string) {
+	if len(images) == 0 {
+		return nil, ""
+	}
+	urls = make([]string, 0, len(images))
+	var parts []string
+	for _, img := range images {
+		switch {
+		case img.Data != "":
+			urls = append(urls, img.Data)
+		case img.URL != "":
+			urls = append(urls, img.URL)
+		}
+		if img.Caption != "" {
+			parts = append(parts, img.Caption)
+		}
+	}
+	if len(parts) > 0 {
+		ocrText = strings.Join(parts, "\n")
+	}
+	return
+}
 
 // convertMentionedItems converts MentionedItemRequest slice to types.MentionedItems
 func convertMentionedItems(items []MentionedItemRequest) types.MentionedItems {
@@ -82,9 +124,10 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 						ChunkType:         getString(refMap, "chunk_type"),
 						ParentChunkID:     getString(refMap, "parent_chunk_id"),
 						ImageInfo:         getString(refMap, "image_info"),
-						KnowledgeFilename: getString(refMap, "knowledge_filename"),
-						KnowledgeSource:   getString(refMap, "knowledge_source"),
-						KnowledgeBaseID:   getString(refMap, "knowledge_base_id"),
+						KnowledgeFilename:    getString(refMap, "knowledge_filename"),
+						KnowledgeSource:      getString(refMap, "knowledge_source"),
+						KnowledgeDescription: getString(refMap, "knowledge_description"),
+						KnowledgeBaseID:      getString(refMap, "knowledge_base_id"),
 					}
 					searchResults = append(searchResults, sr)
 				}
@@ -122,9 +165,9 @@ func createAgentQueryEvent(sessionID, assistantMessageID string) interfaces.Stre
 	}
 }
 
-// createUserMessage creates a user message
-func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, requestID string, mentionedItems types.MentionedItems) error {
-	_, err := h.messageService.CreateMessage(ctx, &types.Message{
+// createUserMessage creates a user message and returns the created message.
+func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, requestID string, mentionedItems types.MentionedItems, images types.MessageImages, attachments types.MessageAttachments, channel string) (*types.Message, error) {
+	return h.messageService.CreateMessage(ctx, &types.Message{
 		SessionID:      sessionID,
 		Role:           "user",
 		Content:        query,
@@ -132,8 +175,10 @@ func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, reque
 		CreatedAt:      time.Now(),
 		IsCompleted:    true,
 		MentionedItems: mentionedItems,
+		Images:         images,
+		Attachments:    attachments,
+		Channel:        channel,
 	})
-	return err
 }
 
 // createAssistantMessage creates an assistant message
@@ -244,7 +289,7 @@ func (h *Handler) createDefaultSummaryConfig(ctx context.Context) *types.Summary
 		if tenant.ConversationConfig.ContextTemplate != "" {
 			cfg.ContextTemplate = tenant.ConversationConfig.ContextTemplate
 		}
-		if tenant.ConversationConfig.Temperature > 0 {
+		if tenant.ConversationConfig.Temperature >= 0 {
 			cfg.Temperature = tenant.ConversationConfig.Temperature
 		}
 		if tenant.ConversationConfig.MaxCompletionTokens > 0 {
@@ -302,7 +347,7 @@ func (h *Handler) fillSummaryConfigDefaults(ctx context.Context, config *types.S
 	if config.ContextTemplate == "" {
 		config.ContextTemplate = defaultContextTemplate
 	}
-	if config.Temperature == 0 {
+	if config.Temperature < 0 {
 		config.Temperature = defaultTemperature
 	}
 	if config.MaxCompletionTokens == 0 {

@@ -81,6 +81,11 @@ export interface KBModelConfigRequest {
         enabled: boolean
         model_id?: string
     }
+    asr_config?: {
+        enabled: boolean
+        model_id?: string
+        language?: string
+    }
     documentSplitting: {
         chunkSize: number
         chunkOverlap: number
@@ -250,6 +255,7 @@ export function checkRemoteModel(modelConfig: {
     modelName: string;
     baseUrl: string;
     apiKey?: string;
+    provider?: string;
 }): Promise<{
     available: boolean;
     message?: string;
@@ -303,6 +309,27 @@ export function checkRerankModel(modelConfig: {
             })
             .catch((error: any) => {
                 console.error('Failed to check Rerank model:', error);
+                reject(error);
+            });
+    });
+}
+
+// 检查 ASR 模型连接（通过 /v1/audio/transcriptions 端点测试）
+export function checkASRModel(modelConfig: {
+    modelName: string;
+    baseUrl: string;
+    apiKey?: string;
+}): Promise<{
+    available: boolean;
+    message?: string;
+}> {
+    return new Promise((resolve, reject) => {
+        post('/api/v1/initialization/asr/check', modelConfig)
+            .then((response: any) => {
+                resolve(response.data || {});
+            })
+            .catch((error: any) => {
+                console.error('Failed to check ASR model:', error);
                 reject(error);
             });
     });
@@ -412,7 +439,7 @@ export function testMultimodalFunction(testData: {
 export interface TextRelationExtractionRequest {
     text: string;
     tags: string[];
-    llm_config: LLMConfig;
+    model_id: string;
 }
 
 export interface Node {
@@ -424,13 +451,6 @@ export interface Relation {
     node1: string;
     node2: string;
     type: string;
-}
-
-export interface LLMConfig {
-    source: 'local' | 'remote';
-    model_name: string;
-    base_url: string;
-    api_key: string;
 }
 
 export interface TextRelationExtractionResponse {
@@ -454,7 +474,7 @@ export function extractTextRelations(request: TextRelationExtractionRequest): Pr
 
 export interface FabriTextRequest {
     tags: string[];
-    llm_config: LLMConfig;
+    model_id: string;
 }
 
 export interface FabriTextResponse {
@@ -476,7 +496,6 @@ export function fabriText(request: FabriTextRequest): Promise<FabriTextResponse>
 }
 
 export interface FabriTagRequest {
-    llm_config: LLMConfig;
 }
 
 export interface FabriTagResponse {

@@ -69,12 +69,14 @@ show_help() {
     echo "  --qdrant   Qdrant 벡터 DB 시작"
     echo "  --neo4j    Neo4j 그래프 DB 시작"
     echo "  --jaeger   Jaeger 트레이싱 시작"
+    echo "  --dex      Dex(OIDC 인증) 시작"
     echo "  --full     모든 선택 서비스 시작"
     echo ""
     echo "예시:"
     echo "  $0 start                    # 기본 서비스 시작"
     echo "  $0 start --qdrant           # 기본 서비스 + Qdrant"
     echo "  $0 start --qdrant --jaeger  # 기본 서비스 + Qdrant + Jaeger"
+    echo "  $0 start --dex              # 기본 서비스 + Dex"
     echo "  $0 start --full             # 모든 서비스 시작"
     echo "  $0 app                      # 다른 터미널에서 백엔드 시작"
     echo "  $0 frontend                 # 다른 터미널에서 프론트엔드 시작"
@@ -140,9 +142,13 @@ start_services() {
                 PROFILES="$PROFILES --profile jaeger"
                 ENABLED_SERVICES="$ENABLED_SERVICES jaeger"
                 ;;
+            --dex)
+                PROFILES="$PROFILES --profile dex"
+                ENABLED_SERVICES="$ENABLED_SERVICES dex"
+                ;;
             --full)
                 PROFILES="--profile full"
-                ENABLED_SERVICES="minio qdrant neo4j jaeger"
+                ENABLED_SERVICES="minio qdrant neo4j jaeger dex"
                 break
                 ;;
             *)
@@ -175,6 +181,9 @@ start_services() {
         fi
         if [[ "$ENABLED_SERVICES" == *"jaeger"* ]]; then
             echo "  - Jaeger:        localhost:16686"
+        fi
+        if [[ "$ENABLED_SERVICES" == *"dex"* ]]; then
+            echo "  - Dex:           localhost:5556"
         fi
         
         echo ""
@@ -258,6 +267,7 @@ start_app() {
     export DOCREADER_TRANSPORT=grpc
     export MINIO_ENDPOINT=localhost:9000
     export REDIS_ADDR=localhost:6379
+    export MILVUS_ADDRESS=localhost:19530
     export OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
     export NEO4J_URI=bolt://localhost:7687
     export QDRANT_HOST=localhost
@@ -286,7 +296,7 @@ start_app() {
         log_warning "팁: Air를 설치하면 코드 수정 후 자동 재시작이 가능합니다"
         log_info "설치 명령: go install github.com/air-verse/air@latest"
         LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
-        go run -ldflags="$LDFLAGS" cmd/server/main.go
+        go run -ldflags="$LDFLAGS" ./cmd/server/
     fi
 }
 
@@ -350,4 +360,3 @@ case "$CMD" in
 esac
 
 exit 0
-

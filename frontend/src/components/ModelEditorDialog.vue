@@ -124,10 +124,11 @@
           <!-- 厂商选择器 -->
           <div class="form-item">
             <label class="form-label">{{ $t('model.editor.providerLabel') }}</label>
-            <t-select 
-              v-model="formData.provider" 
+            <t-select
+              v-model="formData.provider"
               :placeholder="$t('model.editor.providerPlaceholder')"
               @change="handleProviderChange"
+              :popup-props="{ overlayClassName: 'provider-select-popup' }"
             >
               <t-option 
                 v-for="opt in providerOptions" 
@@ -143,27 +144,75 @@
             </t-select>
           </div>
 
+          <!-- WeKnoraCloud 提示信息 -->
+          <template v-if="formData.provider === 'weknoracloud'">
+            <!-- 凭证已配置 -->
+            <div v-if="wkcCredentialState === 'configured'" class="weknoracloud-hint weknoracloud-hint--ok">
+              <t-icon name="check-circle-filled" style="font-size: 16px; color: var(--td-success-color); flex-shrink: 0;" />
+              <div>
+                {{ $t('settings.weknoraCloud.modelHintConfigured') }}
+                <a
+                  href="https://developers.weixin.qq.com/doc/aispeech/knowledge/atomic_capability/atomic_interface.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="weknoracloud-hint-link"
+                >{{ $t('settings.weknoraCloud.modelHintDocsLink') }}</a>
+              </div>
+            </div>
+
+            <!-- 未配置 / 失效 -->
+            <div v-else-if="wkcCredentialState !== 'loading'" class="weknoracloud-hint weknoracloud-hint--warn">
+              <t-icon name="error-circle-filled" style="font-size: 16px; color: #f97316; flex-shrink: 0;" />
+              <div style="flex: 1;">
+                <template v-if="wkcCredentialState === 'expired'">
+                  {{ $t('settings.weknoraCloud.credentialExpired') }}
+                </template>
+                <template v-else>
+                  {{ $t('settings.weknoraCloud.credentialUnconfigured') }}
+                </template>
+                <div style="margin-top: 8px;">
+                  <t-button
+                    variant="text"
+                    size="small"
+                    theme="primary"
+                    @click="goToWeKnoraCloudSettings"
+                    style="padding: 0; height: auto;"
+                  >
+                    {{ $t('settings.weknoraCloud.goToSettings') }}
+                  </t-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 加载中 -->
+            <div v-else class="weknoracloud-hint">
+              <t-icon name="loading" class="spinning" style="font-size: 16px; color: var(--td-text-color-placeholder); flex-shrink: 0;" />
+              <span>{{ $t('settings.weknoraCloud.checkingStatus') }}</span>
+            </div>
+          </template>
+
           <!-- 模型名称 -->
           <div class="form-item">
             <label class="form-label required">{{ $t('model.modelName') }}</label>
-            <t-input 
-              v-model="formData.modelName" 
+            <t-input
+              v-model="formData.modelName"
               :placeholder="getModelNamePlaceholder()"
+              :disabled="formData.provider === 'weknoracloud' && wkcCredentialState !== 'configured'"
             />
           </div>
 
-          <div class="form-item">
+          <div v-if="formData.provider !== 'weknoracloud'" class="form-item">
             <label class="form-label required">{{ $t('model.editor.baseUrlLabel') }}</label>
-            <t-input 
-              v-model="formData.baseUrl" 
+            <t-input
+              v-model="formData.baseUrl"
               :placeholder="getBaseUrlPlaceholder()"
             />
           </div>
 
-          <div class="form-item">
+          <div v-if="formData.provider !== 'weknoracloud'" class="form-item">
             <label class="form-label">{{ $t('model.editor.apiKeyOptional') }}</label>
-            <t-input 
-              v-model="formData.apiKey" 
+            <t-input
+              v-model="formData.apiKey"
               type="password"
               :placeholder="$t('model.editor.apiKeyPlaceholder')"
             />
@@ -177,7 +226,7 @@
                 variant="outline" 
                 @click="checkRemoteAPI"
                 :loading="checking"
-                :disabled="!formData.modelName || !formData.baseUrl"
+                :disabled="!formData.modelName || (!formData.baseUrl && formData.provider !== 'weknoracloud') || (formData.provider === 'weknoracloud' && wkcCredentialState !== 'configured')"
               >
                 <template #icon>
                   <t-icon 
@@ -230,6 +279,15 @@
           </p>
         </div>
 
+        <!-- Chat: supports vision toggle (VLLM models are inherently multimodal) -->
+        <div v-if="modelType === 'chat'" class="form-item">
+          <label class="form-label">{{ $t('model.editor.supportsVisionLabel') }}</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <t-switch v-model="formData.supportsVision" />
+            <span class="form-desc">{{ $t('model.editor.supportsVisionDesc') }}</span>
+          </div>
+        </div>
+
       </t-form>
           </div>
 
@@ -238,7 +296,7 @@
             <t-button theme="default" variant="outline" @click="handleCancel">
               {{ $t('common.cancel') }}
             </t-button>
-            <t-button theme="primary" @click="handleConfirm" :loading="saving">
+            <t-button theme="primary" @click="handleConfirm" :loading="saving" :disabled="formData.provider === 'weknoracloud' && wkcCredentialState !== 'configured'">
               {{ $t('common.save') }}
             </t-button>
           </div>
@@ -251,7 +309,8 @@
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, listModelProviders, type OllamaModelInfo, type ModelProviderOption } from '@/api/initialization'
+import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, checkASRModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, listModelProviders, type OllamaModelInfo, type ModelProviderOption } from '@/api/initialization'
+import { getWeKnoraCloudStatus } from '@/api/model'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
 
@@ -266,11 +325,12 @@ interface ModelFormData {
   dimension?: number
   interfaceType?: 'ollama' | 'openai'
   isDefault: boolean
+  supportsVision?: boolean
 }
 
 interface Props {
   visible: boolean
-  modelType: 'chat' | 'embedding' | 'rerank' | 'vllm'
+  modelType: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr'
   modelData?: ModelFormData | null
 }
 
@@ -293,21 +353,34 @@ const loadingProviders = ref(false)
 
 // 硬编码的后备 Provider 配置 (当 API 不可用时使用)
 const fallbackProviderOptions = computed(() => [
-  { 
-    value: 'openai', 
-    label: t('model.editor.providers.openai.label'), 
+  {
+    value: 'openai',
+    label: t('model.editor.providers.openai.label'),
     defaultUrls: {
       chat: 'https://api.openai.com/v1',
       embedding: 'https://api.openai.com/v1',
       rerank: 'https://api.openai.com/v1',
-      vllm: 'https://api.openai.com/v1'
+      vllm: 'https://api.openai.com/v1',
+      asr: 'https://api.openai.com/v1'
     },
     description: t('model.editor.providers.openai.description'),
-    modelTypes: ['chat', 'embedding', 'vllm']
+    modelTypes: ['chat', 'embedding', 'vllm', 'asr']
   },
-  { 
-    value: 'aliyun', 
-    label: t('model.editor.providers.aliyun.label'), 
+  {
+    value: 'azure_openai',
+    label: t('model.editor.providers.azure_openai.label'),
+    defaultUrls: {
+      chat: 'https://{resource}.openai.azure.com',
+      embedding: 'https://{resource}.openai.azure.com',
+      vllm: 'https://{resource}.openai.azure.com',
+      asr: 'https://{resource}.openai.azure.com'
+    },
+    description: t('model.editor.providers.azure_openai.description'),
+    modelTypes: ['chat', 'embedding', 'vllm', 'asr']
+  },
+  {
+    value: 'aliyun',
+    label: t('model.editor.providers.aliyun.label'),
     defaultUrls: {
       chat: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       embedding: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -331,9 +404,12 @@ const fallbackProviderOptions = computed(() => [
   { 
     value: 'openrouter', 
     label: t('model.editor.providers.openrouter.label'), 
-    defaultUrls: { chat: 'https://openrouter.ai/api/v1' },
+    defaultUrls: {
+      chat: 'https://openrouter.ai/api/v1',
+      embedding: 'https://openrouter.ai/api/v1'
+    },
     description: t('model.editor.providers.openrouter.description'),
-    modelTypes: ['chat']
+    modelTypes: ['chat', 'embedding']
   },
   { 
     value: 'siliconflow', 
@@ -356,12 +432,35 @@ const fallbackProviderOptions = computed(() => [
     description: t('model.editor.providers.jina.description'),
     modelTypes: ['embedding', 'rerank']
   },
+  {
+    value: 'nvidia',
+    label: t('model.editor.providers.nvidia.label'),
+    defaultUrls: {
+      chat: 'https://integrate.api.nvidia.com/v1',
+      embedding: 'https://integrate.api.nvidia.com/v1',
+      rerank: 'https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking',
+      vllm: 'https://integrate.api.nvidia.com/v1',
+    },
+    description: t('model.editor.providers.nvidia.description'),
+    modelTypes: ['chat', 'embedding', 'rerank', 'vllm']
+  },
+  {
+    value: 'novita',
+    label: t('model.editor.providers.novita.label'),
+    defaultUrls: {
+      chat: 'https://api.novita.ai/openai/v1',
+      embedding: 'https://api.novita.ai/openai/v1',
+      vllm: 'https://api.novita.ai/openai/v1',
+    },
+    description: t('model.editor.providers.novita.description'),
+    modelTypes: ['chat', 'embedding', 'vllm']
+  },
   { 
     value: 'generic', 
-    label: t('model.editor.providers.generic.label'), 
+    label: t('model.editor.providers.generic.label'),
     defaultUrls: {},
     description: t('model.editor.providers.generic.description'),
-    modelTypes: ['chat', 'embedding', 'rerank', 'vllm']
+    modelTypes: ['chat', 'embedding', 'rerank', 'vllm', 'asr']
   },
 ])
 
@@ -433,6 +532,34 @@ let downloadInterval: any = null
 const ollamaServiceStatus = ref<boolean | null>(null)
 const checkingOllamaStatus = ref(false)
 
+// WeKnoraCloud 凭证状态
+const wkcCredentialState = ref<'loading' | 'unconfigured' | 'configured' | 'expired'>('loading')
+
+const checkWkcCredentialStatus = async () => {
+  wkcCredentialState.value = 'loading'
+  try {
+    const status = await getWeKnoraCloudStatus()
+    if (status.needs_reinit) {
+      wkcCredentialState.value = 'expired'
+    } else if (status.has_models) {
+      wkcCredentialState.value = 'configured'
+    } else {
+      wkcCredentialState.value = 'unconfigured'
+    }
+  } catch {
+    wkcCredentialState.value = 'unconfigured'
+  }
+}
+
+const goToWeKnoraCloudSettings = async () => {
+  emit('update:visible', false)
+  if (uiStore.showSettingsModal) {
+    uiStore.closeSettings()
+    await nextTick()
+  }
+  uiStore.openSettings('weknoracloud')
+}
+
 const formData = ref<ModelFormData>({
   id: '',
   name: '',
@@ -443,7 +570,8 @@ const formData = ref<ModelFormData>({
   apiKey: '',
   dimension: undefined,
   interfaceType: 'ollama',
-  isDefault: false
+  isDefault: false,
+  supportsVision: false
 })
 
 const rules = computed(() => ({
@@ -499,15 +627,22 @@ const getModelNamePlaceholder = () => {
       ? t('model.editor.modelNamePlaceholder.localVllm')
       : t('model.editor.modelNamePlaceholder.remoteVllm')
   }
+  if (props.modelType === 'asr') {
+    return t('model.editor.modelNamePlaceholder.remoteAsr')
+  }
   return formData.value.source === 'local'
     ? t('model.editor.modelNamePlaceholder.local')
     : t('model.editor.modelNamePlaceholder.remote')
 }
 
 const getBaseUrlPlaceholder = () => {
-  return props.modelType === 'vllm'
-    ? t('model.editor.baseUrlPlaceholderVllm')
-    : t('model.editor.baseUrlPlaceholder')
+  if (props.modelType === 'vllm') {
+    return t('model.editor.baseUrlPlaceholderVllm')
+  }
+  if (props.modelType === 'asr') {
+    return t('model.editor.baseUrlPlaceholderAsr')
+  }
+  return t('model.editor.baseUrlPlaceholder')
 }
 
 // 检查Ollama服务状态
@@ -567,6 +702,11 @@ watch(() => props.visible, (val) => {
     if (props.modelType === 'rerank') {
       formData.value.source = 'remote'
     }
+
+    // 如果当前 provider 是 WeKnoraCloud，检查凭证状态
+    if (formData.value.provider === 'weknoracloud') {
+      checkWkcCredentialStatus()
+    }
   } else {
     // 恢复背景滚动
     document.body.style.overflow = ''
@@ -585,7 +725,8 @@ const resetForm = () => {
     apiKey: '',
     dimension: undefined, // 默认不填，让用户手动输入或通过检测按钮获取
     interfaceType: undefined,
-    isDefault: false
+    isDefault: false,
+    supportsVision: false
   }
   modelChecked.value = false
   modelAvailable.value = false
@@ -610,6 +751,10 @@ const handleProviderChange = (value: string) => {
     remoteChecked.value = false
     remoteAvailable.value = false
     remoteMessage.value = ''
+  }
+  // WeKnoraCloud: 检查凭证状态
+  if (value === 'weknoracloud') {
+    checkWkcCredentialStatus()
   }
 }
 
@@ -744,10 +889,12 @@ const checkOllamaDimension = async () => {
 
 // 检查 Remote API 连接（根据模型类型调用不同的接口）
 const checkRemoteAPI = async () => {
-  if (!formData.value.modelName || !formData.value.baseUrl) {
+  if (!formData.value.modelName || (!formData.value.baseUrl && formData.value.provider !== 'weknoracloud')) {
     MessagePlugin.warning(t('model.editor.fillModelAndUrl'))
     return
   }
+
+  const baseUrl = formData.value.baseUrl || ''
   
   checking.value = true
   remoteChecked.value = false
@@ -762,8 +909,9 @@ const checkRemoteAPI = async () => {
         // 对话模型（KnowledgeQA）
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
-          apiKey: formData.value.apiKey || ''
+          baseUrl,
+          apiKey: formData.value.apiKey || '',
+          provider: formData.value.provider
         })
         break
         
@@ -772,7 +920,7 @@ const checkRemoteAPI = async () => {
         result = await testEmbeddingModel({
           source: 'remote',
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl,
           apiKey: formData.value.apiKey || '',
           dimension: formData.value.dimension,
           provider: formData.value.provider
@@ -788,7 +936,7 @@ const checkRemoteAPI = async () => {
         // Rerank 模型
         result = await checkRerankModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl,
           apiKey: formData.value.apiKey || ''
         })
         break
@@ -798,11 +946,21 @@ const checkRemoteAPI = async () => {
         // VLLM 使用 checkRemoteModel 进行基础连接测试
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl,
+          apiKey: formData.value.apiKey || '',
+          provider: formData.value.provider
+        })
+        break
+
+      case 'asr':
+        // ASR 模型（语音识别）— 使用专用的 ASR 测试接口（/v1/audio/transcriptions）
+        result = await checkASRModel({
+          modelName: formData.value.modelName,
+          baseUrl,
           apiKey: formData.value.apiKey || ''
         })
         break
-        
+
       default:
         MessagePlugin.error(t('model.editor.unsupportedModelType'))
         return
@@ -848,8 +1006,8 @@ const handleConfirm = async () => {
       return
     }
     
-    // 如果是 remote 类型，必须填写 baseUrl
-    if (formData.value.source === 'remote') {
+    // 如果是 remote 类型且非 WeKnoraCloud，必须填写 baseUrl
+    if (formData.value.source === 'remote' && formData.value.provider !== 'weknoracloud') {
       if (!formData.value.baseUrl || !formData.value.baseUrl.trim()) {
         MessagePlugin.warning(t('model.editor.remoteBaseUrlRequired'))
         return
@@ -1195,24 +1353,8 @@ const handleOverlayMouseUp = () => {
   }
 }
 
-// 厂商选择器样式
-.provider-option {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 0;
-
-  .provider-name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--td-text-color-primary);
-  }
-
-  .provider-desc {
-    font-size: 12px;
-    color: var(--td-text-color-placeholder);
-  }
-}
+// 厂商选择器样式 — 移至非 scoped 块，因为 t-select popup 渲染到 body 下
+// .provider-option 样式见文件末尾
 
 // 单选按钮组
 :deep(.t-radio-group) {
@@ -1356,6 +1498,39 @@ const handleOverlayMouseUp = () => {
 
     &.unavailable {
       color: var(--td-error-color);
+    }
+  }
+}
+
+// WeKnoraCloud 提示信息
+.weknoracloud-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+  line-height: 1.5;
+
+  &--ok {
+    background: var(--td-success-color-light);
+    border: 1px solid var(--td-success-color-focus);
+  }
+
+  &--warn {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-left: 3px solid #f97316;
+  }
+
+  .weknoracloud-hint-link {
+    color: var(--td-brand-color);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
     }
   }
 }
@@ -1585,3 +1760,36 @@ const handleOverlayMouseUp = () => {
 }
 </style>
 
+<!-- 非 scoped 样式：t-select popup 渲染到 body 下，scoped 样式无法覆盖 -->
+<style lang="less">
+.provider-select-popup {
+  // 覆盖 TDesign option 默认固定高度，让两行内容正常展示
+  .t-select-option {
+    height: auto !important;
+    padding: 0 8px;
+  }
+
+  .provider-option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0;
+
+    .provider-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--td-text-color-primary);
+      line-height: 22px;
+    }
+
+    .provider-desc {
+      font-size: 12px;
+      color: var(--td-text-color-placeholder);
+      line-height: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+</style>

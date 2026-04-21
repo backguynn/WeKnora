@@ -8,6 +8,9 @@ export default {
     logout: 'Выход',
     uploadKnowledge: 'Загрузить знания',
     deleteRecord: 'Удалить запись',
+    clearMessages: 'Очистить сообщения',
+    clearMessagesSuccess: 'Сообщения очищены',
+    clearMessagesFailed: 'Не удалось очистить сообщения, попробуйте позже',
     batchManage: 'Пакетное управление',
     newSession: 'Новый диалог',
     confirmLogout: 'Вы уверены, что хотите выйти?',
@@ -82,6 +85,8 @@ export default {
     noValidFilesSelected: 'Все выбранные файлы не поддерживаются',
     hiddenFilesFiltered: 'Отфильтровано {count} скрытых файлов',
     imagesFilteredNoVLM: 'Отфильтровано {count} изображений (VLM не включен)',
+    videosFilteredNoVLM: 'Пропущено {count} видеофайлов (загрузка видео не поддерживается)',
+    audiosFilteredNoASR: 'Отфильтровано {count} аудиофайлов (ASR не включен)',
     invalidFilesFiltered: 'Отфильтровано {count} неподдерживаемых файлов',
     unsupportedFileType: 'Неподдерживаемый тип файла',
     unsupportedTypesHint: 'Некоторые типы документов ({types}) не имеют доступного парсера и не могут быть обработаны',
@@ -90,7 +95,7 @@ export default {
     andMoreFiles: '...и ещё {count} файлов',
     duplicateFilesSkipped: 'Пропущено {count} повторяющихся файлов',
     uploadFile: 'Загрузить файл',
-    uploadFileDesc: 'Поддерживает PDF, Word, TXT и т.д.',
+    uploadFileDesc: 'Поддерживает PDF, Word, TXT, изображения, аудио и т.д.',
     importURL: 'Импорт из URL',
     importURLDesc: 'Импорт по ссылке URL',
     importURLTitle: 'Импорт из URL',
@@ -107,6 +112,17 @@ export default {
     typeURL: 'URL',
     typeManual: 'Вручную',
     typeFile: 'Файл',
+    channelLabel: 'Канал источника',
+    channelWeb: 'Веб',
+    channelApi: 'API',
+    channelBrowserExtension: 'Расширение браузера',
+    channelWechat: 'WeChat',
+    channelWecom: 'WeCom',
+    channelFeishu: 'Feishu',
+    channelDingtalk: 'DingTalk',
+    channelSlack: 'Slack',
+    channelIm: 'IM канал',
+    channelUnknown: 'Неизвестно',
     urlSource: 'Исходный URL',
     documentTitle: 'Название документа',
     webContent: 'Веб-содержимое',
@@ -129,6 +145,9 @@ export default {
     confirmDeleteQuestion: 'Вы уверены, что хотите удалить этот вопрос? Соответствующий векторный индекс также будет удален.',
     legacyQuestionCannotDelete: 'Вопросы в устаревшем формате нельзя удалить. Пожалуйста, сгенерируйте вопросы заново.',
     notInitialized: 'База знаний не инициализирована. Пожалуйста, настройте модели в разделе настроек перед загрузкой файлов',
+    missingStorageEngine: 'Для этой базы знаний не выбрано хранилище. Пожалуйста, настройте хранилище в параметрах перед загрузкой содержимого.',
+    missingStorageEngineUpload: 'Пожалуйста, настройте хранилище перед загрузкой содержимого',
+    goToStorageSettings: 'Перейти к настройкам',
     getInfoFailed: 'Не удалось получить информацию о базе знаний, загрузка файла невозможна',
     missingId: 'Отсутствует ID базы знаний',
     deleteFailed: 'Не удалось удалить. Пожалуйста, попробуйте позже!',
@@ -191,6 +210,7 @@ export default {
     parsingFailed: 'Парсинг не удался',
     parsingInProgress: 'Парсинг...',
     generatingSummary: 'Генерация резюме...',
+    documentSummary: 'Резюме',
     deleteConfirmation: 'Подтверждение удаления',
     confirmDeleteDocument: 'Подтвердить удаление документа "{fileName}", после удаления восстановление невозможно',
     cancel: 'Отмена',
@@ -266,6 +286,7 @@ export default {
   },
   agent: {
     taskLabel: 'Задача:',
+    think: 'Размышление',
     copy: 'Копировать',
     addToKnowledgeBase: 'Добавить в базу знаний',
     updatePlan: 'Обновить план',
@@ -527,8 +548,11 @@ export default {
     webSearchConfig: 'Сетевой поиск',
     enableMemory: 'Включить память',
     enableMemoryDesc: 'При включении система будет записывать историю ваших разговоров и автоматически вспоминать соответствующий контент в будущих беседах для более персонализированных ответов.',
+    autoCheckUpdate: 'Автоматическая загрузка обновлений',
+    autoCheckUpdateDesc: 'При включении автоматически проверять и скачивать последнюю версию в фоновом режиме при запуске.',
     memoryRequiresNeo4j: 'Функция памяти требует графовую базу данных Neo4j. Пожалуйста, настройте и включите Neo4j (установите NEO4J_ENABLE=true) перед активацией этой функции.',
     memoryHowToEnable: 'Руководство по настройке Neo4j',
+    vectorStoreEngine: 'Движок векторной БД',
     parserEngine: 'Движок парсинга',
     storageEngine: 'Движок хранения',
     mcpService: 'Сервис MCP',
@@ -537,6 +561,36 @@ export default {
     systemSettings: 'Настройки системы',
     tenantInfo: 'Информация о арендаторе',
     apiInfo: 'Информация API',
+    weknoraCloud: {
+      title: 'WeKnora Cloud',
+      description: 'Настройте учётные данные APPID и APPSECRET для WeKnora Cloud. Данные используются для модельных сервисов и движка парсинга документов.',
+      viewDocs: 'Документация',
+      unconfigured: 'Учётные данные не настроены. Заполните APPID и APPSECRET.',
+      configured: 'Учётные данные настроены, статус в норме.',
+      expired: 'Учётные данные WeKnora Cloud истекли',
+      expiredDefault: 'Ключ шифрования изменился после перезапуска. Сохранённые данные не могут быть расшифрованы. Введите данные заново.',
+      reconfigure: 'Перенастроить',
+      appIdLabel: 'APPID',
+      appIdDesc: 'ID приложения WeKnora Cloud',
+      appIdPlaceholder: 'Введите APPID',
+      appSecretLabel: 'APPSECRET',
+      appSecretDesc: 'Секрет приложения WeKnora Cloud',
+      appSecretPlaceholder: 'Введите APPSECRET',
+      saveHint: 'Данные будут проверены и зашифрованы перед сохранением.',
+      saveBtn: 'Сохранить',
+      usageTitle: 'Инструкция',
+      usageSteps: '1. Заполните и сохраните APPID и APPSECRET\n2. Модели: перейдите в управление моделями, добавьте модель с источником Remote API, выберите WeKnoraCloud\n3. Парсинг документов: перейдите в настройки базы знаний → движок парсинга, выберите WeKnora Cloud для нужных типов файлов',
+      fillRequired: 'Заполните APPID и APPSECRET',
+      saveSuccess: 'Учётные данные сохранены',
+      saveFailed: 'Не удалось сохранить данные',
+      credentialConfigured: 'Учётные данные WeKnoraCloud настроены.',
+      credentialExpired: 'Данные истекли. Перенастройте.',
+      credentialUnconfigured: 'Учётные данные WeKnoraCloud не настроены. Заполните APPID и APPSECRET.',
+      checkingStatus: 'Проверка статуса...',
+      goToSettings: 'Перейти в настройки',
+      modelHintConfigured: 'Учётные данные WeKnoraCloud настроены. Поддерживаемые модели см. в',
+      modelHintDocsLink: 'документации API',
+    },
     system: 'Настройки системы',
     systemConfig: 'Системная конфигурация',
     knowledgeBaseSettings: 'Настройки базы знаний',
@@ -591,12 +645,13 @@ export default {
       formulaRecognition: 'Распознавание формул',
       tableRecognition: 'Распознавание таблиц',
       language: 'Язык',
-      checkWithParams: 'Проверить с текущими параметрами',
+      testConnection: 'Проверить с текущими параметрами',
       saveConfig: 'Сохранить конфигурацию',
       docs: 'Документация',
       loadFailed: 'Не удалось загрузить список парсеров',
       ensureDocreaderConnected: 'Убедитесь, что сервис DocReader настроен через переменные окружения и подключён',
       checkDoneStatusUpdated: 'Проверка выполнена. Статус выше обновлён.',
+      checkSuccess: 'Тест подключения пройден успешно',
       checkFailed: 'Проверка не пройдена',
       saveSuccess: 'Сохранено',
       saveFailed: 'Ошибка сохранения',
@@ -617,6 +672,7 @@ export default {
       engineLocal: 'Локальное',
       engineCos: 'Tencent Cloud COS',
       engineTos: 'Volcengine TOS',
+      engineOss: 'Alibaba Cloud OSS',
       engineS3: 'AWS S3',
       localTitle: 'Локальное хранилище',
       localDesc: 'Хранение файлов в локальной файловой системе сервера. Подходит только для однонодового развёртывания.',
@@ -650,6 +706,10 @@ export default {
       s3Desc: 'AWS S3 и совместимые сервисы объектного хранилища для публичного облака.',
       s3AccessKeyPlaceholder: 'AWS Access Key',
       s3SecretKeyPlaceholder: 'AWS Secret Key',
+      ossTitle: 'Alibaba Cloud OSS',
+      ossDesc: 'Объектное хранилище Alibaba Cloud (OSS), подходит для публичного облака.',
+      ossAccessKeyPlaceholder: 'Alibaba Cloud Access Key',
+      ossSecretKeyPlaceholder: 'Alibaba Cloud Secret Key',
       console: 'Консоль',
       docs: 'Документация',
       testConnection: 'Тест подключения',
@@ -660,15 +720,44 @@ export default {
       unknownError: 'Неизвестная ошибка',
       requestFailed: 'Ошибка запроса',
       cos: 'Tencent Cloud COS',
-      tos: 'Volcengine TOS'
+      tos: 'Volcengine TOS',
+      oss: 'Alibaba Cloud OSS',
     }
   },
   webSearchSettings: {
     title: 'Настройки веб-поиска',
     description: 'Настройте веб-поиск, чтобы ответы могли включать актуальную информацию из интернета.',
+    providersTitle: 'Поисковые провайдеры',
+    addProvider: 'Добавить провайдер',
+    editProvider: 'Редактировать провайдер',
+    noProviders: 'Поисковые провайдеры не настроены. Нажмите «Добавить провайдер», чтобы начать.',
+    deleteConfirm: 'Вы уверены, что хотите удалить этот провайдер?',
+    default: 'По умолчанию',
+    providerNameLabel: 'Название',
+    providerNamePlaceholder: 'Напр., Продакшн Bing Поиск',
+    providerTypeLabel: 'Тип провайдера',
+    providerDescLabel: 'Описание',
+    engineIdLabel: 'ID движка',
+    setAsDefault: 'Установить по умолчанию',
+    free: 'Бесплатно',
+    viewDocs: 'Документация для получения ключа',
+    apiKeyUnchanged: 'Оставьте пустым, чтобы сохранить текущий ключ',
+    testConnection: 'Проверить соединение',
+    testing: 'Тестирование...',
+    noDescription: "Нет описания",
+    noProvidersDesc: "Добавьте провайдера веб-поиска, чтобы позволить вашим агентам получать информацию из Интернета в реальном времени.",
+    basicInfo: "Основная информация",
+    credentials: "Учетные данные",
+    setAsDefaultDesc: "Этот провайдер будет использоваться по умолчанию, если агент не укажет свой",
+    searchBehaviorTitle: 'Поведение поиска',
+    defaultProviderLabel: 'Провайдер по умолчанию',
+    defaultProviderDescription: 'Выберите провайдер поиска по умолчанию для агентов, не указавших собственный.',
     providerLabel: 'Провайдер поиска',
     providerDescription: 'Выберите поисковый сервис, используемый для веб-поиска',
     providerPlaceholder: 'Выберите поисковую систему...',
+    proxyUrlLabel: 'HTTP-прокси',
+    proxyUrlPlaceholder: 'Напр. http://127.0.0.1:7890 (необязательно)',
+    proxyUrlHelp: 'Укажите, если доступ к API поиска нужен через прокси; иначе используются переменные HTTP_PROXY/HTTPS_PROXY.',
     apiKeyLabel: 'API-ключ',
     apiKeyDescription: 'Введите API-ключ выбранного провайдера поиска',
     apiKeyPlaceholder: 'Введите API-ключ',
@@ -691,8 +780,66 @@ export default {
     toasts: {
       loadProvidersFailed: 'Не удалось загрузить список поисковых провайдеров: {message}',
       saveSuccess: 'Настройки веб-поиска сохранены',
-      saveFailed: 'Не удалось сохранить настройки: {message}'
+      saveFailed: 'Не удалось сохранить настройки: {message}',
+      providerCreated: 'Поисковый провайдер создан',
+      providerUpdated: 'Поисковый провайдер обновлён',
+      providerDeleted: 'Поисковый провайдер удалён',
     }
+  },
+  vectorStoreSettings: {
+    title: 'Движок векторной базы данных',
+    description: 'Регистрация и управление экземплярами векторных баз данных для поиска по базе знаний.',
+    storesTitle: 'Векторные базы данных',
+    addStore: 'Добавить базу данных',
+    editStore: 'Редактировать базу данных',
+    deleteConfirm: 'Вы уверены, что хотите удалить эту векторную базу данных?',
+    emptyDesc: 'Векторные базы данных не настроены. Нажмите "Добавить базу данных", чтобы начать.',
+    engineTypeLabel: 'Тип движка',
+    nameLabel: 'Название',
+    namePlaceholder: 'например, my-vector-store',
+    connectionInfo: 'Информация о подключении',
+    advancedIndexConfig: 'Расширенные настройки',
+    fields: {
+      addr: 'URL',
+      host: 'Хост',
+      port: 'Порт',
+      username: 'Имя пользователя',
+      password: 'Пароль',
+      api_key: 'API ключ',
+      use_tls: 'Использовать TLS',
+      scheme: 'Схема',
+      grpc_address: 'gRPC адрес',
+      use_default_connection: 'Использовать подключение по умолчанию',
+      index_name: 'Имя индекса',
+      number_of_shards: 'Шарды',
+      number_of_replicas: 'Реплики',
+      collection_prefix: 'Префикс коллекции',
+      collection_name: 'Имя коллекции',
+      shard_number: 'Количество шардов',
+      replication_factor: 'Фактор репликации',
+      shards_num: 'Шарды',
+      replica_number: 'Реплики в памяти',
+      desired_shard_count: 'Количество шардов',
+    },
+    envTag: 'DEFAULT',
+    testConnection: 'Тест подключения',
+    testing: 'Тестирование...',
+    immutableNotice: 'Тип движка, подключение и настройки индекса нельзя изменить после создания.\nДля изменения удалите и создайте заново.',
+    validation: {
+      nameRequired: 'Название обязательно',
+      engineTypeRequired: 'Тип движка обязателен',
+      fieldRequired: '{field} обязательно',
+      indexNamePattern: 'Должно начинаться с буквы. Допускаются только буквы, цифры, подчёркивание и дефис (макс. 128)',
+    },
+    toasts: {
+      storeCreated: 'Векторная база данных создана',
+      storeUpdated: 'Векторная база данных обновлена',
+      storeDeleted: 'Векторная база данных удалена',
+      testSuccess: 'Тест подключения успешен',
+      testFailed: 'Тест подключения не удался',
+      duplicateName: 'Векторная база данных с таким именем уже существует',
+      errorGeneric: 'Произошла ошибка. Попробуйте снова.',
+    },
   },
   chatHistorySettings: {
     title: 'Управление сообщениями',
@@ -724,7 +871,7 @@ export default {
     rerankTopKLabel: 'Rerank Top K',
     rerankTopKDescription: 'Максимальное количество результатов после повторного ранжирования',
     rerankThresholdLabel: 'Порог Rerank',
-    rerankThresholdDescription: 'Минимальный порог оценки для повторного ранжирования (0-1)',
+    rerankThresholdDescription: 'Минимальный порог оценки для повторного ранжирования (от -10 до 10)',
     rerankModelLabel: 'Модель Rerank',
     rerankModelDescription: 'Выберите модель для повторного ранжирования результатов поиска',
     rerankModelRequired: 'Пожалуйста, выберите модель Rerank. Функция поиска требует эту модель для ранжирования результатов.',
@@ -983,6 +1130,12 @@ export default {
   auth: {
     login: 'Вход',
     logout: 'Выход',
+    oidcLogin: 'Войти через OIDC',
+    oidcLoginWithProvider: 'Войти через {provider}',
+    redirectingToOIDC: 'Перенаправление к поставщику удостоверений...',
+    orContinueWith: 'Или продолжить с помощью',
+    oidcLoginFailed: 'Ошибка входа через OIDC',
+    oidcStateMismatch: 'Не удалось проверить состояние OIDC, попробуйте снова',
     username: 'Имя пользователя',
     email: 'Почта Email',
     password: 'Пароль',
@@ -1068,13 +1221,19 @@ export default {
     reset: 'Сбросить',
     clear: 'Очистить',
     website: 'Официальный сайт',
+    chromeExtension: 'Расширение Chrome',
+    clawhubSkill: 'Claw Skill',
+    newBadge: 'New',
     github: 'GitHub',
+    githubStarTip: 'Открыть репозиторий на GitHub — поставьте Star, если проект полезен',
     on: 'Вкл',
     off: 'Выкл',
     resetToDefault: 'Сбросить по умолчанию',
     confirmDelete: 'Подтвердить удаление',
     deleteSuccess: 'Успешно удалено',
     deleteFailed: 'Ошибка удаления',
+    saveSuccess: 'Успешно сохранено',
+    saveFailed: 'Ошибка сохранения',
     file: 'Файл',
     knowledgeBase: 'База знаний',
     noResult: 'Нет результатов',
@@ -1082,6 +1241,8 @@ export default {
     defaultUser: 'Пользователь',
     copyFailed: 'Ошибка копирования',
     retry: 'Повторить',
+    expand: 'Развернуть',
+    collapse: 'Свернуть',
     me: 'Я',
     copy: 'Копировать',
     copied: 'Скопировано'
@@ -1193,6 +1354,10 @@ export default {
       description: 'Просматривайте и управляйте своим API-ключом',
       keyLabel: 'API Key',
       keyDescription: 'Ключ для API-запросов. Храните его в безопасности.',
+      urlLabel: 'URL API',
+      urlDescription: 'Базовый путь REST API; при вызове добавляйте конкретный путь эндпоинта.',
+      copyUrlTitle: 'Скопировать URL API',
+      urlCopySuccess: 'URL API скопирован в буфер обмена',
       copyTitle: 'Скопировать API Key',
       docLabel: 'Документация API',
       docDescription: 'Ознакомьтесь с полной документацией и примерами API,',
@@ -1208,7 +1373,26 @@ export default {
       createdAtDescription: 'Время создания учётной записи',
       noKey: 'API Key отсутствует',
       copySuccess: 'API Key скопирован в буфер обмена',
-      copyFailed: 'Не удалось скопировать, пожалуйста, сделайте это вручную'
+      copyFailed: 'Не удалось скопировать, пожалуйста, сделайте это вручную',
+      desktopPortLabel: 'Локальный порт API (desktop)',
+      desktopPortDescription:
+        'Укажите фиксированный порт (например, 37841), чтобы расширение Chrome и другие инструменты всегда использовали один URL API. 0 — случайный порт при каждом запуске. После сохранения перезапустите приложение.',
+      desktopPortSave: 'Сохранить',
+      desktopPortSaved: 'Сохранено. Перезапустите приложение, чтобы применить.',
+      desktopPortSaveFailed: 'Не удалось сохранить',
+      desktopPortInvalid: 'Введите порт от 0 до 65535',
+      desktopBindPublicLabel: 'Разрешить доступ к API в LAN',
+      desktopBindPublicDescription:
+        'Встроенный сервер слушает 0.0.0.0 — другие устройства в локальной сети смогут обращаться к API по адресу ниже. Риски доступа выше; настройте брандмауэр и маршрутизацию. После изменения перезапустите приложение.',
+      desktopBindPublicSaved: 'Сохранено. Перезапустите приложение, чтобы применить.',
+      desktopBindPublicSaveFailed: 'Не удалось сохранить',
+      lanUrlLabel: 'Базовый URL API для LAN',
+      lanUrlDescription:
+        'Отображается после включения доступа в LAN и перезапуска. Если IP неверный, подставьте IPv4 из сетевых настроек системы.',
+      lanUrlCopyTitle: 'Копировать LAN URL API',
+      lanUrlCopySuccess: 'LAN URL API скопирован',
+      lanUrlUnavailable:
+        'API слушает все интерфейсы, но LAN IPv4 не удалось определить автоматически. Узнайте IPv4 в настройках сети и соберите http://ВАШ_IP:ПОРТ/api/v1 вручную.',
     }
   },
   system: {
@@ -1326,17 +1510,20 @@ export default {
         embedding: 'Настройте модель встраивания для текстовой векторизации',
         rerank: 'Настройте модель для повторного ранжирования результатов',
         vllm: 'Настройте визуально-языковую модель для мультимодального понимания',
+        asr: 'Настройте модель распознавания речи для транскрибации аудио',
         default: 'Настройте информацию о модели'
       },
       modelNamePlaceholder: {
         local: 'например: llama2:latest',
         remote: 'например: gpt-4, claude-3-opus',
         localVllm: 'например: llava:latest',
-        remoteVllm: 'например: gpt-4-vision-preview'
+        remoteVllm: 'например: gpt-4-vision-preview',
+        remoteAsr: 'например: whisper-1'
       },
       baseUrlLabel: 'Base URL',
       baseUrlPlaceholder: 'например: https://api.openai.com/v1',
       baseUrlPlaceholderVllm: 'например: http://localhost:11434/v1',
+      baseUrlPlaceholderAsr: 'например: https://api.openai.com/v1',
       apiKeyOptional: 'API Key (опционально)',
       apiKeyPlaceholder: 'Введите API Key',
       connectionTest: 'Проверка соединения',
@@ -1351,6 +1538,8 @@ export default {
       dimensionDetected: 'Определение выполнено, размерность: {value}',
       dimensionFailed: 'Не удалось определить, введите размерность вручную',
       remoteDimensionDetected: 'Обнаружена размерность: {value}',
+      supportsVisionLabel: 'Поддержка визуального / мультимодального ввода',
+      supportsVisionDesc: 'Поддерживает ли модель изображения и другой мультимодальный ввод',
       dimensionHint: 'Модель выбрана. Нажмите «Определить размерность», чтобы автоматически получить значение.',
       loadModelListFailed: 'Не удалось загрузить список моделей',
       listRefreshed: 'Список обновлён',
@@ -1381,6 +1570,10 @@ export default {
         openai: {
           label: 'OpenAI',
           description: 'gpt-5.2, gpt-5-mini, etc.'
+        },
+        azure_openai: {
+          label: 'Azure OpenAI',
+          description: 'Сервис OpenAI на платформе Microsoft Azure',
         },
         aliyun: {
           label: 'Aliyun DashScope',
@@ -1420,7 +1613,7 @@ export default {
         },
         minimax: {
           label: 'MiniMax',
-          description: 'MiniMax-M2.1, MiniMax-M2.1-lightning, etc.'
+          description: 'MiniMax-M2.7, MiniMax-M2.7-highspeed, MiniMax-M2.5, etc.'
         },
         mimo: {
           label: 'MiMo',
@@ -1457,7 +1650,15 @@ export default {
         lkeap: {
           label: 'Tencent Cloud LKEAP',
           description: 'DeepSeek-R1, DeepSeek-V3 с поддержкой цепочки рассуждений'
-        }
+        },
+        nvidia: {
+          label: "NVIDIA",
+          description: "deepseek-ai-deepseek-v3_1, nv-embed-v1, rerank-qa-mistral-4b, etc.",
+        },
+        novita: {
+          label: "Novita AI",
+          description: "moonshotai/kimi-k2.5, zai-org/glm-5, minimax/minimax-m2.7, qwen/qwen3-embedding-0.6b, etc.",
+        },
       }
     },
     builtinTag: 'Built-in'
@@ -1575,7 +1776,10 @@ export default {
       advanced: 'Дополнительные настройки',
       faq: 'FAQ настройки',
       graph: 'Граф знаний',
+      multimodal: 'Обработка изображений',
+      asr: 'Аудио',
       storage: 'Storage Engine',
+      datasource: 'Источники данных',
       share: 'Sharing'
     },
     basic: {
@@ -1607,7 +1811,8 @@ export default {
       missingId: 'Отсутствует ID базы знаний',
       buildDataFailed: 'Не удалось сформировать данные для отправки',
       updateSuccess: 'Настройки сохранены',
-      indexModeRequired: 'Выберите режим индексации для FAQ базы знаний'
+      indexModeRequired: 'Выберите режим индексации для FAQ базы знаний',
+      storageChangeConfirm: 'В базе знаний уже есть файлы. Смена хранилища может сделать старые файлы недоступными. Продолжить?'
     },
     document: {
       title: 'Управление документами',
@@ -1766,6 +1971,20 @@ export default {
       childChunkSizeLabel: 'Размер дочернего блока',
       childChunkSizeDescription: 'Размер дочерних блоков для поиска по эмбеддингам (64-1024)'
     },
+    multimodal: {
+      title: 'Обработка изображений',
+      description: 'Настройте понимание изображений для парсинга и поиска нетекстового контента',
+    },
+    asr: {
+      title: 'Распознавание речи для аудио',
+      description:
+        'Настройте ASR (речь → текст). При включении можно загружать аудиофайлы и транскрибировать их в текст (mp3, wav, m4a, flac, ogg и др.). Загрузка видео не поддерживается.',
+      label: 'Включить распознавание речи для аудио',
+      desc: 'При включении в базу можно загружать аудио; речь транскрибируется в текст для парсинга и поиска',
+      modelLabel: 'Модель ASR',
+      modelDescription: 'Модель распознавания речи для транскрибации аудио (например, OpenAI Whisper)',
+      modelPlaceholder: 'Выберите модель ASR',
+    },
     advanced: {
       title: 'Расширенные настройки',
       description: 'Настройте генерацию вопросов и мультимодальные возможности',
@@ -1777,7 +1996,7 @@ export default {
       },
       multimodal: {
         label: 'Мультимодальная функция',
-        description: 'Включите понимание мультимедийного контента, такого как изображения и видео',
+        description: 'Включите понимание мультимедийного контента, такого как изображения',
         vllmLabel: 'VLLM модель для зрения',
         vllmDescription: 'Визуально-языковая модель, необходимая для мультимодального понимания',
         vllmPlaceholder: 'Выберите VLLM модель (обязательно)',
@@ -1838,6 +2057,8 @@ export default {
   chat: {
     title: 'Диалог',
     newChat: 'Новый чат',
+    suggestedQuestions: 'Вы можете спросить меня',
+    suggestedQuestionsLoading: 'Загрузка предложений...',
     inputPlaceholder: 'Введите ваше сообщение...',
     send: 'Отправить',
     thinking: 'Думаю...',
@@ -1868,6 +2089,9 @@ export default {
     referencesDocAndWebCount: 'Использовано {docCount} документ(ов) и {webCount} веб-страниц(ы)',
     referenceChunkCount: '{count} фрагмент(ов)',
     fallbackHint: 'В базе знаний не найдено релевантного содержимого. Выше представлен прямой ответ модели.',
+    channelWeb: 'Веб',
+    channelApi: 'API',
+    channelIm: 'IM',
     chunkLabel: 'Фрагмент {index}:',
     navigateToDocument: 'Просмотр документа',
     referenceIconAlt: 'Иконка ссылок на материалы',
@@ -1939,6 +2163,14 @@ export default {
     noAnswerContent: '(Нет содержимого ответа)',
     noMatchFound: 'Совпадений не найдено',
     deleteSessionFailed: 'Ошибка удаления, попробуйте позже!',
+    imageTooMany: 'Максимум 5 изображений',
+    imageTypeSizeError: 'Поддерживаются только JPG/PNG/GIF/WEBP до 10 МБ',
+    imageUploadTooltip: 'Загрузить изображение (вставка/перетаскивание)',
+    attachmentUploadTooltip: 'Загрузить вложение (документы, аудио и т.д.)',
+    attachmentWithCount: 'Загружено файлов: {count}',
+    attachmentTooMany: 'Максимум {max} файлов',
+    attachmentTooLarge: 'Файл {name} превышает лимит {max} МБ',
+    attachmentTypeNotSupported: 'Неподдерживаемый тип файла: {name}',
     thinkingAlt: 'Обдумывание...',
     deepThoughtCompleted: 'Глубокий анализ завершён',
     deepThoughtAlt: 'Глубокий анализ'
@@ -2300,6 +2532,11 @@ export default {
       desc: 'Визуально-языковые модели для мультимодального понимания',
       empty: 'Нет VLLM моделей'
     },
+    asr: {
+      title: 'ASR модели речи',
+      desc: 'Модели распознавания речи для транскрибации аудио (например, OpenAI Whisper)',
+      empty: 'Нет ASR моделей'
+    },
     toasts: {
       nameRequired: 'Название модели не может быть пустым',
       nameTooLong: 'Название модели не может превышать 100 символов',
@@ -2572,6 +2809,7 @@ export default {
     cannotRemoveAgentKb: 'Cannot remove knowledge base configured by agent',
     agentConfiguredKb: 'Configured by agent, cannot be removed',
     modelLockedByAgent: 'Model selection is locked by the current agent',
+    imageUploadDisabledByAgent: 'Image upload is not enabled for this agent',
     goToAgentSettings: 'Go to agent settings'
   },
   preview: {
@@ -2583,6 +2821,8 @@ export default {
     unsupportedHint: 'Скачайте файл и откройте локально',
     fullscreen: 'Полноэкранный режим',
     exitFullscreen: 'Выйти из полноэкранного режима',
+    audioLoading: 'Загрузка аудио…',
+    audioNotSupported: 'Ваш браузер не поддерживает воспроизведение аудио',
   },
   knowledgeSearch: {
     title: 'Поиск',
@@ -2638,6 +2878,7 @@ export default {
       notConfigured: 'Не настроено',
       unavailable: 'Недоступно',
       lockedHint: 'В базе знаний уже есть файлы. Невозможно сменить хранилище. Для смены сначала удалите все файлы.',
+      changeWarning: 'Смена хранилища влияет только на новые загружаемые файлы. Существующие файлы по-прежнему будут читаться из прежнего хранилища, но некоторые старые файлы могут стать недоступными.',
       goGlobalSettings: 'Перейти в глобальные настройки',
       engineLocal: 'Локальное хранилище',
       engineLocalDesc: 'Для однонодового развёртывания, простое и лёгкое',
@@ -2648,6 +2889,8 @@ export default {
       engineTosDesc: 'Объектное хранилище Volcengine, для публичного облака',
       engineS3: 'AWS S3',
       engineS3Desc: 'AWS S3 и совместимые хранилища, для публичного облака',
+      engineOss: 'Alibaba Cloud OSS',
+      engineOssDesc: 'Объектное хранилище Alibaba Cloud, для публичного облака',
     },
     parser: {
       title: 'Парсер',
@@ -2665,8 +2908,14 @@ export default {
       fileTypeExcel: 'Таблицы Excel',
       fileTypeCsv: 'Файлы CSV',
       fileTypeText: 'Текстовые файлы',
+      fileTypeJson: 'Файлы JSON',
       fileTypeImage: 'Изображения',
+      fileTypeAudiovisual: 'Аудио',
       engines: {
+        builtin: {
+          name: 'Встроенный',
+          desc: 'Встроенный парсер DocReader (docx/pdf/xlsx и другие сложные форматы)',
+        },
         simple: {
           name: 'Simple',
           desc: 'Простой формат и анализ изображений (внешний сервис не требуется)',
@@ -2678,6 +2927,10 @@ export default {
         mineru_cloud: {
           name: 'MinerU Cloud',
           desc: 'MinerU Cloud API',
+        },
+        weknoracloud: {
+          name: 'WeKnora Cloud',
+          desc: 'Парсинг документов через WeKnora Cloud',
         },
       },
     },
@@ -2695,7 +2948,15 @@ export default {
       getDocumentContent: 'Получение содержимого документа',
       todoWrite: 'Управление планами',
       knowledgeGraphExtract: 'Извлечение графа знаний',
-      thinking: 'Размышление'
+      thinking: 'Размышление',
+      imageAnalysis: 'Анализ изображения',
+      queryKnowledgeGraph: 'Запрос графа знаний',
+      finalAnswer: 'Генерация ответа',
+      readSkill: 'Чтение навыка',
+      executeSkillScript: 'Выполнение скрипта навыка',
+      dataAnalysis: 'Анализ данных',
+      dataSchema: 'Структура данных',
+      databaseQuery: 'Запрос к базе данных'
     },
     summary: {
       searchKb: 'Поиск по базе знаний <strong>{count}</strong> раз(а)',
@@ -2715,7 +2976,7 @@ export default {
     toolSummary: {
       getDocument: 'Получить документ: {title}',
       document: 'Документ',
-      listChunks: 'Просмотр {fetched}/{total} фрагментов {title}',
+      listChunks: 'Просмотр {title}',
       deepThinking: 'Глубокое размышление'
     },
     plan: {
@@ -2743,6 +3004,9 @@ export default {
       thinkingFailed: 'Ошибка размышления',
       updateTodos: 'Обновление списка задач',
       updateTodosFailed: 'Ошибка обновления списка задач',
+      imageAnalyzing: 'Анализ изображения...',
+      imageAnalysisDone: 'Анализ изображения завершён',
+      imageAnalysisFailed: 'Ошибка анализа изображения',
       called: 'Вызван {name}',
       calledFailed: 'Ошибка вызова {name}'
     },
@@ -2823,12 +3087,81 @@ export default {
       dataSchemaDesc: 'Получение метаинформации табличных файлов',
       requiresKb: '(требуется настройка базы знаний)'
     },
+    im: {
+      title: 'Интеграция IM',
+      description: 'Подключите агента к платформам мгновенных сообщений, таким как Feishu, Slack, Telegram, DingTalk и Mattermost',
+      feishu: 'Feishu',
+      slack: 'Slack',
+      telegram: 'Telegram',
+      dingtalk: 'DingTalk',
+      mattermost: 'Mattermost',
+      addChannel: 'Добавить канал',
+      editChannel: 'Редактировать канал',
+      deleteConfirm: 'Вы уверены, что хотите удалить этот канал? Это действие не может быть отменено.',
+      channelName: 'Имя канала',
+      channelNamePlaceholder: 'Введите имя для легкой идентификации',
+      platform: 'Платформа',
+      mode: 'Режим подключения',
+      outputMode: 'Режим вывода',
+      outputStream: 'Стриминг',
+      outputFull: 'Полное выходное значение',
+      callbackUrl: 'URL обратного вызова',
+      empty: 'Нет IM каналов. Нажмите кнопку ниже, чтобы добавить один.',
+      unnamed: 'Неименованный канал',
+      docLink: 'Руководство по интеграции',
+      feishuConsole: 'Платформа Feishu',
+      slackConsole: 'Консоль Slack API',
+      telegramConsole: 'Telegram BotFather',
+      dingtalkConsole: 'Платформа DingTalk',
+      dingtalkCardTemplateId: 'ID шаблона карточки (необязательно)',
+      dingtalkCardTemplateIdHint: 'Создайте шаблон AI-карточки на open-dev.dingtalk.com/fe/card для потоковой передачи с эффектом печатной машинки',
+      mattermostConsole: 'Интеграции Mattermost',
+      mattermostModeHint: 'Mattermost поддерживает только режим Webhook (исходящий вебхук + токен бота).',
+      mattermostPostToMain: 'Ответы в основной ленте канала',
+      mattermostPostToMainHint:
+        'Включено — ответы бота как новые сообщения в канале. Выключено (по умолчанию) — ответы в ветке, в основном окне только «N ответов».',
+      modeHint: 'Рекомендуется WebSocket — проще настроить',
+      consoleTip: 'для получения учётных данных',
+      wecomWSEndpointHint: 'Необязательно. Для приватного развёртывания WeCom укажите пользовательский адрес WebSocket. Оставьте пустым для публичного облака. Для адресов внутренней сети добавьте имя хоста в переменную SSRF_WHITELIST.',
+      wecomAPIBaseURLHint: 'Необязательно. Для приватного развёртывания WeCom укажите пользовательский базовый URL API. Оставьте пустым для публичного облака. Для адресов внутренней сети добавьте имя хоста в переменную SSRF_WHITELIST.',
+      fileKnowledgeBase: 'База знаний для файлов',
+      fileKnowledgeBasePlaceholder: 'Выберите базу знаний (необязательно)',
+      fileKnowledgeBaseHint: 'При настройке файлы, отправленные пользователями, автоматически сохраняются в эту базу знаний',
+      sessionMode: 'Режим сессии',
+      sessionModeUser: 'По пользователю (по умолчанию)',
+      sessionModeThread: 'По потоку',
+      sessionModeHint: 'Режим пользователя: отдельный диалог для каждого пользователя. /clear для нового диалога. Режим потока: отдельный диалог для каждого потока. Несколько человек могут общаться в одном потоке.',
+    },
     mcp: {
       label: 'MCP-сервисы',
       desc: 'Выберите MCP-сервисы, доступные агенту',
       selectLabel: 'Выбор MCP-сервисов',
       selectDesc: 'Выберите MCP-сервисы для включения',
       selectPlaceholder: 'Выберите MCP-сервисы'
+    },
+    imageUpload: {
+      navLabel: 'Мультимодальность',
+      sectionTitle: 'Настройка мультимодальности',
+      sectionDesc: 'Настройте загрузку изображений и визуально-языковую модель для мультимодальных диалогов',
+      label: 'Загрузка изображений',
+      desc: 'Разрешить пользователям загружать изображения для мультимодальных вопросов и ответов',
+      vlmModel: 'Модель VLM',
+      vlmModelDesc: 'Визуально-языковая модель для анализа изображений',
+      vlmModelPlaceholder: 'Выберите модель VLM',
+      vlmModelRequired: 'Модель VLM обязательна при включённой загрузке изображений',
+      storageProvider: 'Хранилище изображений',
+      storageProviderDesc: 'Хранилище для загруженных изображений. Оставьте пустым для системного значения по умолчанию',
+      storageProviderPlaceholder: 'Выберите хранилище',
+      storageDefault: 'Системное значение',
+      notConfigured: 'Не настроено',
+      goStorageSettings: 'Перейти к настройкам хранилища'
+    },
+    audioUpload: {
+      label: 'Загрузка аудио',
+      desc: 'Позволяет пользователям загружать аудиофайлы в чате. Система автоматически транскрибирует их с помощью ASR-модели.',
+      asrModel: 'ASR-модель',
+      asrModelDesc: 'Модель распознавания речи. Если не настроена, аудиофайлы передаются как заглушки.',
+      asrModelPlaceholder: 'Выберите ASR-модель',
     },
     faq: {
       title: 'Стратегия приоритета FAQ',
@@ -2904,90 +3237,10 @@ export default {
     noTemplates: 'No templates available',
     selectTemplate: 'Select Template',
     useTemplate: 'Use Template',
+    resetDefault: 'Reset Default',
+    default: 'Default',
     withKnowledgeBase: 'KB',
     withWebSearch: 'Web Search',
-    systemPrompt: {
-      defaultKB: {
-        name: 'Knowledge Base Assistant',
-        desc: 'Basic knowledge base Q&A template for most scenarios'
-      },
-      expert: {
-        name: 'Domain Expert',
-        desc: 'Professional and in-depth answers for technical domains'
-      },
-      customerService: {
-        name: 'Customer Service',
-        desc: 'Friendly and warm service style for customer support'
-      },
-      techSupport: {
-        name: 'Technical Support',
-        desc: 'Professional technical problem solving with code examples'
-      },
-      pureChat: {
-        name: 'General Chat',
-        desc: 'General conversation assistant without knowledge base'
-      },
-      webSearch: {
-        name: 'Web Search Assistant',
-        desc: 'Combines web search for up-to-date information'
-      }
-    },
-    contextTemplate: {
-      default: {
-        name: 'Standard Template',
-        desc: 'Basic context template with clear references and questions'
-      },
-      detailed: {
-        name: 'Detailed Template',
-        desc: 'Complete template with detailed instructions and requirements'
-      },
-      simple: {
-        name: 'Simple Template',
-        desc: 'Minimal template format for simple Q&A scenarios'
-      },
-      qa: {
-        name: 'Q&A Template',
-        desc: 'Optimized template for Q&A scenarios'
-      }
-    },
-    rewriteSystem: {
-      default: {
-        name: 'Standard Rewrite',
-        desc: 'Standard rules for resolving references and completing omissions'
-      },
-      strict: {
-        name: 'Strict Rewrite',
-        desc: 'Stricter requirements for complete and independent questions'
-      }
-    },
-    rewriteUser: {
-      default: {
-        name: 'Standard Format',
-        desc: 'Standard format with conversation history and current question'
-      },
-      detailed: {
-        name: 'Detailed Format',
-        desc: 'Detailed format with task instructions'
-      }
-    },
-    fallback: {
-      default: {
-        name: 'Standard Fallback',
-        desc: 'Friendly message with suggestions when unable to answer'
-      },
-      polite: {
-        name: 'Polite Fallback',
-        desc: 'More polite and detailed unable-to-answer message'
-      },
-      brief: {
-        name: 'Brief Fallback',
-        desc: 'Short unable-to-answer message'
-      },
-      model: {
-        name: 'Model Fallback Prompt',
-        desc: 'Prompt to guide model to answer with general knowledge'
-      }
-    }
   },
   organization: {
     title: 'Shared Spaces',
@@ -3263,5 +3516,132 @@ export default {
       sharedKBs: ' knowledge bases',
       sharedAgents: ' agents'
     }
-  }
+  },
+  datasource: {
+    title: 'Источники данных',
+    description: 'Настройте внешние источники данных для автоматической синхронизации контента',
+    add: 'Добавить источник',
+    addFirst: 'Добавить первый источник данных',
+    empty: 'Источники данных не настроены',
+    edit: 'Редактировать',
+    delete: 'Удалить',
+    deleteConfirm: 'Удалить этот источник данных? Синхронизированные знания не будут удалены.',
+    deleteSuccess: 'Источник данных удалён',
+    deleteFailed: 'Не удалось удалить',
+    syncNow: 'Синхронизировать',
+    syncTriggered: 'Задача синхронизации отправлена',
+    syncFailed: 'Не удалось запустить синхронизацию',
+    pause: 'Пауза',
+    resume: 'Возобновить',
+    paused: 'Приостановлено',
+    resumed: 'Возобновлено',
+    pauseFailed: 'Не удалось приостановить',
+    logs: 'Журнал',
+    moreActions: 'Дополнительные действия',
+    lastSync: 'Последняя синхронизация',
+    lastStatus: 'Результат',
+    schedule: 'Расписание',
+    syncModeLabel: 'Режим синхронизации',
+    syncMode: {
+      incremental: 'Инкрементная',
+      full: 'Полная',
+    },
+    status: {
+      active: 'Подключено',
+      paused: 'Приостановлено',
+      error: 'Ошибка',
+    },
+    createTitle: 'Добавить источник данных',
+    editTitle: 'Редактировать источник данных',
+    nameLabel: 'Название',
+    namePlaceholder: 'Введите название источника данных',
+    testConnection: 'Проверить подключение',
+    testSuccess: 'Подключение успешно',
+    testFailed: 'Подключение не удалось',
+    connected: 'Подключено',
+    connectionFailed: 'Подключение не удалось',
+    isRequired: 'обязательно для заполнения',
+    resourceHint: 'Выберите пространства или папки для синхронизации',
+    untitled: 'Без названия',
+    resourceLoadFailed: 'Не удалось загрузить список ресурсов',
+    noResources: 'Пространства вики не найдены',
+    noResourcesDesc: 'Приложению требуется доступ к вики через групповой чат для получения контента',
+    noResourcesDesc_notion: 'Приложению требуются права доступа к странице Notion для получения контента',
+    retryLoadResources: 'Повторить',
+    guideStep1: 'Создайте групповой чат в Feishu, затем добавьте ваше приложение как бота в настройках группы',
+    guideStep2: 'Откройте вики "Настройки" > "Управление участниками" > "Добавить участника", найдите групповой чат и добавьте его',
+    guideStep3: 'Убедитесь, что роль группового чата как минимум "Может читать", затем вернитесь и нажмите Повторить',
+    guideStep1_notion: 'Откройте страницу или базу данных, которую хотите синхронизировать в Notion',
+    guideStep2_notion: 'Нажмите меню «···» в правом верхнем углу, выберите «Connect to» или «Add connections»',
+    guideStep3_notion: 'Найдите и выберите ваше интеграционное приложение, затем вернитесь и нажмите Повторить',
+    permissionDocLink: 'Документация по настройке прав доступа',
+    syncScheduleLabel: 'Расписание синхронизации',
+    conflictLabel: 'Стратегия конфликтов',
+    conflict: {
+      overwrite: 'Перезаписать',
+      skip: 'Пропустить существующие',
+    },
+    syncDeletions: 'Синхронизировать удаления (удалять знания при удалении в источнике)',
+    createAndSync: 'Создать и синхронизировать',
+    createSuccess: 'Источник данных создан',
+    updateSuccess: 'Источник данных обновлён',
+    saveFailed: 'Не удалось сохранить',
+    step: {
+      selectType: 'Выберите тип',
+      credentials: 'Учётные данные',
+      resources: 'Ресурсы',
+      strategy: 'Стратегия',
+    },
+    syncHistory: 'История синхронизации',
+    refreshLogs: 'Обновить журнал',
+    noLogs: 'Нет записей синхронизации',
+    logStatus: {
+      running: 'Синхронизация',
+      success: 'Успешно',
+      partial: 'Частично',
+      failed: 'Ошибка',
+      canceled: 'Отменено',
+    },
+    logMetric: {
+      total: 'Всего',
+      failed: 'ошибок',
+    },
+    connector: {
+      feishu: 'Feishu (Фэйшу)',
+      notion: 'Notion',
+      confluence: 'Confluence',
+      yuque: 'Yuque (Юйцюэ)',
+      github: 'GitHub',
+      web_crawler: 'Веб-краулер',
+    },
+    connectorDesc: {
+      feishu: 'Синхронизация документов, таблиц и файлов из Feishu Wiki',
+      notion: 'Синхронизация страниц и баз данных из Notion',
+      confluence: 'Синхронизация пространств и страниц из Confluence',
+      yuque: 'Синхронизация документов из баз знаний Yuque',
+      github: 'Синхронизация документов и вики из репозиториев GitHub',
+      web_crawler: 'Сканирование веб-сайтов через Sitemap',
+    },
+    field: {
+      appId: 'App ID',
+      appSecret: 'App Secret',
+      integrationToken: 'Integration Token',
+      baseUrl: 'Base URL',
+      email: 'Email',
+      apiToken: 'API Token',
+      personalToken: 'Personal Access Token',
+      sitemapUrl: 'Sitemap URL',
+    },
+    comingSoon: 'Скоро',
+    docHint: 'Получить учётные данные можно здесь:',
+    pleaseTestFirst: 'Сначала проверьте подключение',
+    back: 'Назад',
+    next: 'Далее',
+    save: 'Сохранить',
+    schedule30min: 'Каждые 30 мин',
+    schedule1h: 'Каждый час',
+    schedule6h: 'Каждые 6 часов',
+    schedule12h: 'Каждые 12 часов',
+    schedule24h: 'Ежедневно',
+  },
 }

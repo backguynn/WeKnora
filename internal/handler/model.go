@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
@@ -101,6 +102,15 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 
 	logger.Infof(ctx, "Creating model, Tenant ID: %d, Model name: %s, Model type: %s",
 		tenantID, secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(string(req.Type)))
+
+	// SSRF validation for model BaseURL
+	if req.Parameters.BaseURL != "" {
+		if err := secutils.ValidateURLForSSRF(req.Parameters.BaseURL); err != nil {
+			logger.Warnf(ctx, "SSRF validation failed for model BaseURL: %v", err)
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+			return
+		}
+	}
 
 	model := &types.Model{
 		TenantID:    tenantID,
@@ -291,10 +301,22 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 		model.Name = req.Name
 	}
 	model.Description = req.Description
-	// Check if any Parameters field is set (can't use struct comparison due to map field)
-	if req.Parameters.BaseURL != "" || req.Parameters.APIKey != "" || req.Parameters.Provider != "" {
-		model.Parameters = req.Parameters
+
+	// SSRF validation for updated model BaseURL
+	if req.Parameters.BaseURL != "" {
+		if err := secutils.ValidateURLForSSRF(req.Parameters.BaseURL); err != nil {
+			logger.Warnf(ctx, "SSRF validation failed for model BaseURL: %v", err)
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+			return
+		}
 	}
+	// Preserve backend-managed fields not sent by frontend
+	req.Parameters.ParameterSize = model.Parameters.ParameterSize
+	if req.Parameters.ExtraConfig == nil {
+		req.Parameters.ExtraConfig = model.Parameters.ExtraConfig
+	}
+	model.Parameters = req.Parameters
+
 	model.Source = req.Source
 	model.Type = req.Type
 
@@ -380,6 +402,8 @@ func modelTypeToFrontend(mt types.ModelType) string {
 		return "rerank"
 	case types.ModelTypeVLLM:
 		return "vllm"
+	case types.ModelTypeASR:
+		return "asr"
 	default:
 		return string(mt)
 	}
@@ -415,6 +439,8 @@ func (h *ModelHandler) ListModelProviders(c *gin.Context) {
 		backendModelType = types.ModelTypeRerank
 	case "vllm":
 		backendModelType = types.ModelTypeVLLM
+	case "asr":
+		backendModelType = types.ModelTypeASR
 	default:
 		backendModelType = types.ModelType(modelType)
 	}

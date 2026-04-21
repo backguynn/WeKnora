@@ -2,11 +2,12 @@
 import axios from "axios";
 import { generateRandomString } from "./index";
 import i18n from '@/i18n'
+import { getApiBaseUrl } from './api-base';
 
 const t = (key: string) => i18n.global.t(key)
 
 // API基础URL
-const BASE_URL = import.meta.env.VITE_IS_DOCKER ? "" : "http://localhost:8080";
+const BASE_URL = getApiBaseUrl();
 
 
 // 创建Axios实例
@@ -19,6 +20,11 @@ const instance = axios.create({
   },
 });
 
+// 获取当前用户语言（用于 Accept-Language header）
+function getCurrentLanguage(): string {
+  return i18n.global.locale?.value || localStorage.getItem('locale') || 'zh-CN'
+}
+
 
 instance.interceptors.request.use(
   (config) => {
@@ -27,6 +33,9 @@ instance.interceptors.request.use(
     if (token) {
       config.headers["Authorization"] = `Bearer ${token}`;
     }
+    
+    // 添加用户语言偏好
+    config.headers["Accept-Language"] = getCurrentLanguage();
     
     // 添加跨租户访问请求头（如果选择了其他租户）
     const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
@@ -55,7 +64,13 @@ instance.interceptors.request.use(
 // Token刷新标志，防止多个请求同时刷新token
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: Function; reject: Function }> = [];
-let hasRedirectedOn401 = false;
+
+const PUBLIC_AUTH_PATHS = ['/auth/auto-setup', '/auth/login', '/auth/register', '/auth/oidc/'];
+
+function isPublicAuthRequest(url?: string): boolean {
+  if (!url) return false;
+  return PUBLIC_AUTH_PATHS.some(p => url.includes(p));
+}
 
 // 处理队列中的请求
 const processQueue = (error: any, token: string | null = null) => {
@@ -70,11 +85,17 @@ const processQueue = (error: any, token: string | null = null) => {
   failedQueue = [];
 };
 
+function redirectToLogin() {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname === '/login') return;
+  window.location.href = '/login';
+}
+
 instance.interceptors.response.use(
   (response) => {
     // 根据业务状态码处理逻辑
     const { status, data } = response;
-    if (status === 200 || status === 201) {
+    if (status >= 200 && status < 300) {
       return data;
     } else {
       return Promise.reject(data);
@@ -87,10 +108,10 @@ instance.interceptors.response.use(
       return Promise.reject({ message: t('error.networkError') });
     }
     
-    // 如果是登录接口的401，直接返回错误以便页面展示toast，不做跳转
-    if (error.response.status === 401 && originalRequest?.url?.includes('/auth/login')) {
+    // 公开接口（auto-setup / login / register / oidc）的 401 不走 refresh 逻辑，直接返回错误
+    if (error.response.status === 401 && isPublicAuthRequest(originalRequest?.url)) {
       const { status, data } = error.response;
-      return Promise.reject({ status, message: (typeof data === 'object' ? data?.message : data) || t('error.invalidCredentials') });
+      return Promise.reject({ status, message: (typeof data === 'object' ? (data?.error?.message || data?.message) : data) || t('error.invalidCredentials') });
     }
 
     // 如果是401错误且不是刷新token的请求，尝试刷新token
@@ -144,11 +165,7 @@ instance.interceptors.response.use(
           
           processQueue(refreshError, null);
           
-          // 跳转到登录页
-          if (!hasRedirectedOn401 && typeof window !== 'undefined') {
-            hasRedirectedOn401 = true;
-            window.location.href = '/login';
-          }
+          redirectToLogin();
           
           return Promise.reject(refreshError);
         } finally {
@@ -160,10 +177,7 @@ instance.interceptors.response.use(
         localStorage.removeItem('weknora_user');
         localStorage.removeItem('weknora_tenant');
         
-        if (!hasRedirectedOn401 && typeof window !== 'undefined') {
-          hasRedirectedOn401 = true;
-          window.location.href = '/login';
-        }
+        redirectToLogin();
         
         return Promise.reject({ message: t('error.pleaseRelogin') });
       }
@@ -182,9 +196,18 @@ instance.interceptors.response.use(
     // 将HTTP状态码一并抛出，方便上层判断401等场景
     // 后端返回格式: { success: false, error: { code, message, details } }
     // 提取 error.message 作为顶层 message，方便前端使用 error?.message 获取
-    const errorMessage = typeof data === 'object' && data?.error?.message 
-      ? data.error.message 
-      : (typeof data === 'object' ? data?.message : data);
+    let errorMessage: string | undefined;
+    if (typeof data === 'object') {
+      if (typeof data?.error === 'string') {
+        errorMessage = data.error;
+      } else if (data?.error?.message) {
+        errorMessage = data.error.message;
+      } else {
+        errorMessage = data?.message;
+      }
+    } else if (typeof data === 'string') {
+      errorMessage = data;
+    }
     return Promise.reject({ 
       status, 
       message: errorMessage,
@@ -193,15 +216,15 @@ instance.interceptors.response.use(
   }
 );
 
-export function get(url: string) {
-  return instance.get(url);
+export function get<T = any>(url: string): Promise<T> {
+  return instance.get(url) as Promise<T>;
 }
 
-export async function getDown(url: string) {
-  let res = await instance.get(url, {
+export async function getDown(url: string): Promise<Blob> {
+  const res = await instance.get(url, {
     responseType: "blob",
   });
-  return res
+  return res as unknown as Blob
 }
 
 export function postUpload(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void) {
@@ -223,14 +246,14 @@ export function postChat(url: string, data = {}) {
   });
 }
 
-export function post(url: string, data = {}, config?: any) {
-  return instance.post(url, data, config);
+export function post<T = any>(url: string, data = {}, config?: any): Promise<T> {
+  return instance.post(url, data, config) as Promise<T>;
 }
 
-export function put(url: string, data = {}) {
-  return instance.put(url, data);
+export function put<T = any>(url: string, data = {}): Promise<T> {
+  return instance.put(url, data) as Promise<T>;
 }
 
-export function del(url: string, data?: any) {
-  return instance.delete(url, { data });
+export function del<T = any>(url: string, data?: any): Promise<T> {
+  return instance.delete(url, { data }) as Promise<T>;
 }

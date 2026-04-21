@@ -448,11 +448,10 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 
 // AgentConfigRequest represents the request body for updating agent configuration
 type AgentConfigRequest struct {
-	MaxIterations     int      `json:"max_iterations"`
-	ReflectionEnabled bool     `json:"reflection_enabled"`
-	AllowedTools      []string `json:"allowed_tools"`
-	Temperature       float64  `json:"temperature"`
-	SystemPrompt      string   `json:"system_prompt,omitempty"` // Unified system prompt (uses {{web_search_status}} placeholder)
+	MaxIterations int      `json:"max_iterations"`
+	AllowedTools  []string `json:"allowed_tools"`
+	Temperature   float64  `json:"temperature"`
+	SystemPrompt  string   `json:"system_prompt,omitempty"` // Unified system prompt (uses {{web_search_status}} placeholder)
 }
 
 // GetTenantAgentConfig godoc
@@ -501,10 +500,9 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 			"success": true,
 			"data": gin.H{
 				"max_iterations":           agent.DefaultAgentMaxIterations,
-				"reflection_enabled":       agent.DefaultAgentReflectionEnabled,
 				"allowed_tools":            agenttools.DefaultAllowedTools(),
 				"temperature":              agent.DefaultAgentTemperature,
-				"system_prompt":            agent.ProgressiveRAGSystemPrompt,
+				"system_prompt":            agent.GetProgressiveRAGSystemPrompt(h.config),
 				"use_custom_system_prompt": false,
 				"available_tools":          availableTools,
 				"available_placeholders":   availablePlaceholders,
@@ -516,7 +514,7 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 	// Get system prompt, use default if empty
 	systemPrompt := tenant.AgentConfig.ResolveSystemPrompt(true) // webSearchEnabled doesn't matter for unified prompt
 	if systemPrompt == "" {
-		systemPrompt = agent.ProgressiveRAGSystemPrompt
+		systemPrompt = agent.GetProgressiveRAGSystemPrompt(h.config)
 	}
 
 	logger.Infof(ctx, "Retrieved tenant agent config successfully, Tenant ID: %d", tenant.ID)
@@ -524,7 +522,6 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"max_iterations":           tenant.AgentConfig.MaxIterations,
-			"reflection_enabled":       tenant.AgentConfig.ReflectionEnabled,
 			"allowed_tools":            agenttools.DefaultAllowedTools(),
 			"temperature":              tenant.AgentConfig.Temperature,
 			"system_prompt":            systemPrompt,
@@ -572,7 +569,6 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 
 	agentConfig := &types.AgentConfig{
 		MaxIterations:         req.MaxIterations,
-		ReflectionEnabled:     req.ReflectionEnabled,
 		AllowedTools:          agenttools.DefaultAllowedTools(),
 		Temperature:           req.Temperature,
 		SystemPrompt:          systemPrompt,
@@ -908,8 +904,8 @@ func validateConversationConfig(req *types.ConversationConfig) error {
 	if req.RerankTopK <= 0 {
 		return errors.NewBadRequestError("rerank_top_k must be greater than 0")
 	}
-	if req.RerankThreshold < 0 || req.RerankThreshold > 1 {
-		return errors.NewBadRequestError("rerank_threshold must be between 0 and 1")
+	if req.RerankThreshold < -10 || req.RerankThreshold > 10 {
+		return errors.NewBadRequestError("rerank_threshold must be between -10 and 10")
 	}
 	if req.Temperature < 0 || req.Temperature > 2 {
 		return errors.NewBadRequestError("temperature must be between 0 and 2")
@@ -1023,9 +1019,24 @@ func (h *TenantHandler) GetPromptTemplates(c *gin.Context) {
 		templates = &config.PromptTemplatesConfig{}
 	}
 
+	// Determine user language from context (set by Language middleware)
+	lang, _ := types.LanguageFromContext(c.Request.Context())
+
+	// Build a localized copy so the original config is never mutated
+	localized := &config.PromptTemplatesConfig{
+		SystemPrompt:         config.LocalizeTemplates(templates.SystemPrompt, lang),
+		ContextTemplate:      config.LocalizeTemplates(templates.ContextTemplate, lang),
+		Rewrite:              config.LocalizeTemplates(templates.Rewrite, lang),
+		Fallback:             config.LocalizeTemplates(templates.Fallback, lang),
+		GenerateSessionTitle: templates.GenerateSessionTitle,
+		GenerateSummary:      templates.GenerateSummary,
+		KeywordsExtraction:   templates.KeywordsExtraction,
+		AgentSystemPrompt:    config.LocalizeTemplates(templates.AgentSystemPrompt, lang),
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    templates,
+		"data":    localized,
 	})
 }
 
@@ -1165,8 +1176,8 @@ func (h *TenantHandler) updateTenantRetrievalConfigInternal(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("keyword_threshold must be between 0 and 1"))
 		return
 	}
-	if cfg.RerankThreshold < 0 || cfg.RerankThreshold > 1 {
-		c.Error(errors.NewBadRequestError("rerank_threshold must be between 0 and 1"))
+	if cfg.RerankThreshold < -10 || cfg.RerankThreshold > 10 {
+		c.Error(errors.NewBadRequestError("rerank_threshold must be between -10 and 10"))
 		return
 	}
 	if cfg.EmbeddingTopK < 0 || cfg.EmbeddingTopK > 200 {

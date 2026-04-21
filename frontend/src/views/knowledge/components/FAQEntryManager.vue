@@ -23,8 +23,13 @@
                   :disabled="!props.kbId"
                   @click.stop="handleNavigateToCurrentKB"
                 >
-                  <span>{{ kbInfo?.name || '--' }}</span>
-                  <t-icon name="chevron-down" />
+                  <template v-if="!kbInfo">
+                    <t-skeleton animation="gradient" :row-col="[{ width: '120px', height: '20px' }]" />
+                  </template>
+                  <template v-else>
+                    <span>{{ kbInfo.name }}</span>
+                    <t-icon name="chevron-down" />
+                  </template>
                 </button>
               </t-dropdown>
               <button
@@ -34,13 +39,18 @@
                 :disabled="!props.kbId"
                 @click="handleNavigateToCurrentKB"
               >
-                {{ kbInfo?.name || '--' }}
+                <template v-if="!kbInfo">
+                  <t-skeleton animation="gradient" :row-col="[{ width: '120px', height: '20px' }]" />
+                </template>
+                <template v-else>
+                  {{ kbInfo.name }}
+                </template>
               </button>
               <t-icon name="chevron-right" class="breadcrumb-separator" />
               <span class="breadcrumb-current">{{ $t('knowledgeEditor.faq.title') }}</span>
             </h2>
             <!-- 身份与最后更新：紧凑单行，置于标题行右侧，悬停显示权限说明 -->
-            <div v-if="kbInfo" class="faq-access-meta">
+            <div v-if="kbInfo && !authStore.isLiteMode" class="faq-access-meta">
               <t-tooltip :content="accessPermissionSummary" placement="top">
                 <span class="faq-access-meta-inner">
                   <t-tag size="small" :theme="isOwner ? 'success' : (effectiveKBPermission === 'admin' ? 'primary' : effectiveKBPermission === 'editor' ? 'warning' : 'default')" class="faq-access-role-tag">
@@ -206,7 +216,7 @@
                 :title="$t('knowledgeBase.tagCreateAction')"
                 @click="startCreateTag"
               >
-                <span class="create-tag-plus" aria-hidden="true">+</span>
+                <t-icon name="add" />
               </t-button>
             </div>
           </div>
@@ -222,13 +232,20 @@
               </template>
             </t-input>
           </div>
-          <t-loading :loading="tagLoading" size="small">
-            <div ref="tagListRef" class="faq-tag-list" @scroll="handleTagListScroll">
+          <div ref="tagListRef" class="faq-tag-list" @scroll="handleTagListScroll">
+            <template v-if="tagLoading && !filteredTags.length">
+              <div v-for="n in 8" :key="'skel-tag-'+n" class="faq-tag-item" style="cursor: default; pointer-events: none;">
+                <div class="faq-tag-left" style="gap: 12px; width: 100%;">
+                  <t-skeleton animation="gradient" :row-col="[{ width: '80%', height: '18px' }]" />
+                </div>
+              </div>
+            </template>
+            <template v-else>
               <div v-if="creatingTag" class="faq-tag-item tag-editing" @click.stop>
-                <div class="faq-tag-left">
-                  <t-icon name="folder" size="18px" />
-                  <div class="tag-edit-input">
-                    <t-input
+              <div class="faq-tag-left">
+                <span class="tag-hash-icon">#</span>
+                <div class="tag-edit-input">
+                  <t-input
                       ref="newTagInputRef"
                       v-model="newTagName"
                       size="small"
@@ -270,9 +287,9 @@
                   :class="{ active: selectedTagId === tag.seq_id, editing: editingTagId === tag.id }"
                   @click="handleTagRowClick(tag.seq_id)"
                 >
-                  <div class="faq-tag-left">
-                    <t-icon name="folder" size="18px" />
-                    <template v-if="editingTagId === tag.id">
+              <div class="faq-tag-left">
+                <span class="tag-hash-icon">#</span>
+                <template v-if="editingTagId === tag.id">
                       <div class="tag-edit-input" @click.stop>
                         <t-input
                           :ref="setEditingTagInputRefByTag(tag.id)"
@@ -343,8 +360,8 @@
               <div v-if="tagLoadingMore" class="tag-loading-more">
                 <t-loading size="small" />
               </div>
-            </div>
-          </t-loading>
+            </template>
+          </div>
         </aside>
 
         <div class="faq-card-area">
@@ -394,9 +411,22 @@
           </div>
           <!-- Card List Container with Scroll -->
           <div ref="scrollContainer" class="faq-scroll-container" @scroll="handleScroll">
-          <t-loading :loading="loading && entries.length === 0" size="medium">
+            <!-- FAQ 骨架屏 -->
+            <div v-if="loading && entries.length === 0" class="faq-skeleton-grid">
+              <div v-for="n in 6" :key="'faq-skel-'+n" class="faq-card faq-card-skeleton">
+                <div class="faq-card-header">
+                  <t-skeleton animation="gradient" :row-col="[{ width: '80%', height: '16px' }]" />
+                </div>
+                <div class="faq-card-body">
+                  <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '13px' }, { width: '90%', height: '13px' }, { width: '60%', height: '13px' }]" />
+                </div>
+                <div class="faq-skel-footer">
+                  <t-skeleton animation="gradient" :row-col="[[{ width: '50px', height: '18px', type: 'rect' }, { width: '60px', height: '18px', type: 'rect' }]]" />
+                </div>
+              </div>
+            </div>
             <!-- Card List -->
-            <template v-if="entries.length > 0">
+            <template v-else-if="entries.length > 0">
               <div ref="cardListRef" class="faq-card-list">
                 <div
                   v-for="entry in entries"
@@ -415,7 +445,7 @@
                         <t-popup
                           v-if="canManage"
                           v-model="entry.showMore"
-                          overlayClassName="faq-card-popup"
+                          overlayClassName="card-more-popup"
                           trigger="click"
                           destroy-on-close
                           placement="bottom-right"
@@ -425,12 +455,12 @@
                             <img class="more-icon" src="@/assets/img/more.png" alt="" />
                           </div>
                           <template #content>
-                            <div class="card-menu" @click.stop>
-                              <div class="card-menu-item" @click.stop="handleMenuEdit(entry)">
+                            <div class="popup-menu" @click.stop>
+                              <div class="popup-menu-item" @click.stop="handleMenuEdit(entry)">
                                 <t-icon class="menu-icon" name="edit" />
                                 <span>{{ $t('common.edit') }}</span>
                               </div>
-                              <div class="card-menu-item danger" @click.stop="handleMenuDelete(entry)">
+                              <div class="popup-menu-item delete" @click.stop="handleMenuDelete(entry)">
                                 <t-icon class="menu-icon" name="delete" />
                                 <span>{{ $t('common.delete') }}</span>
                               </div>
@@ -614,8 +644,8 @@
                 </div>
               </div>
             </template>
-            <template v-else>
-              <div v-if="!loading" class="faq-empty-state">
+            <template v-else-if="!loading">
+              <div class="faq-empty-state">
                 <div class="empty-content">
                   <t-icon name="file-add" size="48px" class="empty-icon" />
                   <div class="empty-text">{{ $t('knowledgeEditor.faq.emptyTitle') }}</div>
@@ -623,7 +653,6 @@
                 </div>
               </div>
             </template>
-          </t-loading>
           <div v-if="loadingMore" class="faq-load-more">
             <t-loading size="small" :text="$t('common.loading')" />
           </div>
@@ -1363,7 +1392,7 @@ const handleFaqAction = (data: { value: string }) => {
   }
 }
 
-const loading = ref(false)
+const loading = ref(true)
 const loadingMore = ref(false)
 const entries = ref<FAQEntry[]>([])
 const entryStatusLoading = reactive<Record<number, boolean>>({})
@@ -1375,7 +1404,7 @@ const hasMore = ref(true)
 const pageSize = 20
 let currentPage = 1
 const entrySearchKeyword = ref('')
-let entrySearchDebounce: ReturnType<typeof setTimeout> | null = null
+let entrySearchDebounce: number | null = null
 type TagInputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>
 
 const tagList = ref<any[]>([])
@@ -1390,7 +1419,7 @@ const tagPage = ref(1)
 const tagHasMore = ref(false)
 const tagLoadingMore = ref(false)
 const tagTotal = ref(0)
-let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null
+let tagSearchDebounce: number | null = null
 const editingTagInputRefs = new Map<string, TagInputInstance | null>()
 const setEditingTagInputRef = (el: TagInputInstance | null, tagId: string) => {
   if (el) {
@@ -1472,14 +1501,14 @@ const loadKnowledgeInfo = async (kbId: string) => {
 const loadKnowledgeList = async () => {
   try {
     const res: any = await listKnowledgeBases()
-    const myKbs = (res?.data || []).map((item: any) => ({
+    const myKbs: Array<{ id: string; name: string; type: string }> = (res?.data || []).map((item: any) => ({
       id: String(item.id),
       name: item.name,
       type: item.type,
     }))
     
     // Also include shared knowledge bases from orgStore
-    const sharedKbs = (orgStore.sharedKnowledgeBases || [])
+    const sharedKbs: Array<{ id: string; name: string; type: string }> = (orgStore.sharedKnowledgeBases || [])
       .filter(s => s.knowledge_base != null)
       .map(s => ({
         id: String(s.knowledge_base.id),
@@ -1650,6 +1679,7 @@ const handleTagRowClick = (tagSeqId: number) => {
     cancelCreateTag()
   }
   if (selectedTagId.value === tagSeqId) {
+    handleTagFilterChange(0)
     return
   }
   handleTagFilterChange(tagSeqId)
@@ -2322,18 +2352,18 @@ const parseCSVFile = async (file: File): Promise<FAQEntryPayload[]> => {
             const record: Record<string, string> = {}
             // 将行数据转换为记录对象
             Object.keys(row).forEach((key) => {
-              record[key] = String(row[key] || '').trim()
+              record[normalizeFAQColumnKey(key)] = String(row[key] || '').trim()
             })
             
-            const isDisabled = parseBooleanField(record['是否停用'], false)
+            const isDisabled = parseBooleanField(getFAQColumnValue(record, FAQ_COLUMN_KEYS.disabled), false)
             payloads.push(
               normalizePayload({
-                standard_question: record['问题'] || record['standard_question'] || record['question'] || '',
-                answers: splitByDelimiter(record['机器人回答'] || record['answers']),
-                similar_questions: splitByDelimiter(record['相似问题'] || record['similar_questions']),
-                negative_questions: splitByDelimiter(record['反例问题'] || record['negative_questions']),
+                standard_question: getFAQColumnValue(record, FAQ_COLUMN_KEYS.question),
+                answers: splitByDelimiter(getFAQColumnValue(record, FAQ_COLUMN_KEYS.answers)),
+                similar_questions: splitByDelimiter(getFAQColumnValue(record, FAQ_COLUMN_KEYS.similarQuestions)),
+                negative_questions: splitByDelimiter(getFAQColumnValue(record, FAQ_COLUMN_KEYS.negativeQuestions)),
                 tag_id: record['tag_id'] ? Number(record['tag_id']) : undefined,
-                tag_name: record['分类'] || record['tag_name'] || '',
+                tag_name: getFAQColumnValue(record, FAQ_COLUMN_KEYS.category),
                 is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
               }),
             )
@@ -2364,23 +2394,19 @@ const parseExcelFile = async (file: File): Promise<FAQEntryPayload[]> => {
     // 获取原始表头（去除括号说明）
     const normalizedRow: Record<string, string> = {}
     Object.keys(row).forEach((key) => {
-      const normalizedKey = key.trim()
-        .replace(/\([^)]*\)/g, '') // 移除括号及内容
-        .trim()
-      // 对于中文字段名，不转换为小写；对于英文字段名，转换为小写
-      const finalKey = /[\u4e00-\u9fa5]/.test(normalizedKey) ? normalizedKey : normalizedKey.toLowerCase()
+      const finalKey = normalizeFAQColumnKey(key)
       // 确保值是字符串类型
       normalizedRow[finalKey] = String(row[key] || '').trim()
     })
     
-    const isDisabled = parseBooleanField(normalizedRow['是否停用'], false)
+    const isDisabled = parseBooleanField(getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.disabled), false)
     return normalizePayload({
-      standard_question: normalizedRow['问题'] || normalizedRow['standard_question'] || normalizedRow['question'] || '',
-      answers: splitByDelimiter(normalizedRow['机器人回答'] || normalizedRow['answers']),
-      similar_questions: splitByDelimiter(normalizedRow['相似问题'] || normalizedRow['similar_questions']),
-      negative_questions: splitByDelimiter(normalizedRow['反例问题'] || normalizedRow['negative_questions']),
+      standard_question: getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.question),
+      answers: splitByDelimiter(getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.answers)),
+      similar_questions: splitByDelimiter(getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.similarQuestions)),
+      negative_questions: splitByDelimiter(getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.negativeQuestions)),
       tag_id: normalizedRow['tag_id'] ? Number(normalizedRow['tag_id']) : undefined,
-      tag_name: normalizedRow['分类'] || normalizedRow['tag_name'] || '',
+      tag_name: getFAQColumnValue(normalizedRow, FAQ_COLUMN_KEYS.category),
       is_enabled: isDisabled !== undefined ? !isDisabled : undefined, // 是否停用：FALSE表示启用，TRUE表示停用，所以取反
     })
   })
@@ -2404,14 +2430,45 @@ const splitByDelimiter = (value?: string) => {
   return [trimmedValue]
 }
 
+const normalizeFAQColumnKey = (key: string) => {
+  const normalizedKey = key.trim()
+    .replace(/\([^)]*\)/g, '')
+    .trim()
+
+  return /[\u4e00-\u9fa5\uac00-\ud7a3]/.test(normalizedKey)
+    ? normalizedKey
+    : normalizedKey.toLowerCase()
+}
+
+const FAQ_COLUMN_KEYS = {
+  category: ['분류', '分类', 'tag_name'],
+  question: ['질문', '问题', 'standard_question', 'question'],
+  similarQuestions: ['유사 질문', '相似问题', 'similar_questions'],
+  negativeQuestions: ['반례 질문', '反例问题', 'negative_questions'],
+  answers: ['봇 응답', '机器人回答', 'answers'],
+  disabled: ['비활성화', '是否停用'],
+} as const
+
+const getFAQColumnValue = (
+  record: Record<string, string>,
+  keys: readonly string[],
+) => {
+  for (const key of keys) {
+    if (record[key]) {
+      return record[key]
+    }
+  }
+  return ''
+}
+
 // 解析布尔字段（支持多种格式：TRUE/FALSE, true/false, 是/否, 1/0等）
 const parseBooleanField = (value?: string, defaultValue: boolean = true): boolean | undefined => {
   if (!value) return undefined
   const normalized = value.trim().toUpperCase()
-  if (normalized === 'TRUE' || normalized === '1' || normalized === '是' || normalized === 'YES') {
+  if (normalized === 'TRUE' || normalized === '1' || normalized === '是' || normalized === 'YES' || normalized === '예') {
     return true
   }
-  if (normalized === 'FALSE' || normalized === '0' || normalized === '否' || normalized === 'NO') {
+  if (normalized === 'FALSE' || normalized === '0' || normalized === '否' || normalized === 'NO' || normalized === '아니오') {
     return false
   }
   return defaultValue
@@ -2807,21 +2864,21 @@ const downloadExampleOptions = computed(() => [
   { content: t('knowledgeEditor.faqImport.downloadExampleExcel'), value: 'excel' },
 ])
 
-// 示例数据
+// 예시 데이터
 const exampleData: FAQEntryPayload[] = [
   {
-    standard_question: '什么是 WeKnora？',
-    answers: ['WeKnora 是一个智能知识库管理系统', '它支持多种知识库类型和导入方式'],
-    similar_questions: ['WeKnora 是什么？', '介绍一下 WeKnora'],
-    negative_questions: ['这不是 WeKnora', '与 WeKnora 无关'],
-    tag_name: '产品介绍',
+    standard_question: 'WeKnora는 무엇인가요?',
+    answers: ['WeKnora는 지능형 지식베이스 관리 시스템입니다', '여러 지식베이스 유형과 다양한 가져오기 방식을 지원합니다'],
+    similar_questions: ['WeKnora가 무엇인가요?', 'WeKnora를 소개해 주세요'],
+    negative_questions: ['이것은 WeKnora가 아닙니다', 'WeKnora와 관련이 없습니다'],
+    tag_name: '제품 소개',
   },
   {
-    standard_question: '如何创建知识库？',
-    answers: ['点击"新建知识库"按钮', '选择知识库类型并填写相关信息', '完成创建后即可开始使用'],
-    similar_questions: ['怎么创建知识库？', '如何新建知识库？'],
+    standard_question: '지식베이스는 어떻게 생성하나요?',
+    answers: ['"새 지식베이스" 버튼을 클릭하세요', '지식베이스 유형을 선택하고 관련 정보를 입력하세요', '생성이 완료되면 바로 사용할 수 있습니다'],
+    similar_questions: ['지식베이스는 어떻게 만드나요?', '새 지식베이스는 어떻게 생성하나요?'],
     negative_questions: [],
-    tag_name: '使用指南',
+    tag_name: '사용 가이드',
   },
 ]
 
@@ -2855,19 +2912,19 @@ const downloadJSONExample = () => {
   URL.revokeObjectURL(url)
 }
 
-// 下载 CSV 示例
+// CSV 예제 다운로드
 const downloadCSVExample = () => {
-  const headers = ['分类(必填)', '问题(必填)', '相似问题(选填-多个用##分隔)', '反例问题(选填-多个用##分隔)', '机器人回答(必填-多个用##分隔)', '是否全部回复(选填-默认FALSE)', '是否停用(选填-默认FALSE)', '是否禁止被推荐(选填-默认False 可被推荐)']
+  const headers = ['분류(필수)', '질문(필수)', '유사 질문(선택-여러 개는 ##로 구분)', '반례 질문(선택-여러 개는 ##로 구분)', '봇 응답(필수-여러 개는 ##로 구분)', '모두 답변(선택-기본 FALSE)', '비활성화(선택-기본 FALSE)', '추천 제외(선택-기본 FALSE, 추천 가능)']
   const rows = exampleData.map((item) => {
     return [
-      item.tag_name || '', // 分类
+      item.tag_name || '',
       item.standard_question,
       item.similar_questions.join('##'),
       item.negative_questions.join('##'),
       item.answers.join('##'),
-      'FALSE', // 是否全部回复
-      'FALSE', // 是否停用
-      'FALSE', // 是否禁止被推荐
+      'FALSE',
+      'FALSE',
+      'FALSE',
     ]
   })
   const csvContent = [
@@ -2891,18 +2948,18 @@ const downloadCSVExample = () => {
   URL.revokeObjectURL(url)
 }
 
-// 下载 Excel 示例
+// Excel 예제 다운로드
 const downloadExcelExample = () => {
   const worksheet = XLSX.utils.json_to_sheet(
     exampleData.map((item) => ({
-      '分类(必填)': item.tag_name || '',
-      '问题(必填)': item.standard_question,
-      '相似问题(选填-多个用##分隔)': item.similar_questions.join('##'),
-      '反例问题(选填-多个用##分隔)': item.negative_questions.join('##'),
-      '机器人回答(必填-多个用##分隔)': item.answers.join('##'),
-      '是否全部回复(选填-默认FALSE)': 'FALSE',
-      '是否停用(选填-默认FALSE)': 'FALSE',
-      '是否禁止被推荐(选填-默认False 可被推荐)': 'FALSE',
+      '분류(필수)': item.tag_name || '',
+      '질문(필수)': item.standard_question,
+      '유사 질문(선택-여러 개는 ##로 구분)': item.similar_questions.join('##'),
+      '반례 질문(선택-여러 개는 ##로 구분)': item.negative_questions.join('##'),
+      '봇 응답(필수-여러 개는 ##로 구분)': item.answers.join('##'),
+      '모두 답변(선택-기본 FALSE)': 'FALSE',
+      '비활성화(선택-기본 FALSE)': 'FALSE',
+      '추천 제외(선택-기본 FALSE, 추천 가능)': 'FALSE',
     })),
   )
   const workbook = XLSX.utils.book_new()
@@ -3241,72 +3298,7 @@ watch(() => entries.value.map(e => ({
 </script>
 
 <style lang="less">
-.tag-more-popup {
-  z-index: 99 !important;
-
-  .t-popup__content {
-    padding: 4px 0 !important;
-    margin-top: 4px !important;
-    min-width: 120px;
-  }
-}
-
-/* 面包屑下拉菜单优化 */
-.t-popup__content {
-  .t-dropdown__menu {
-    background: var(--td-bg-color-container);
-    border: 1px solid var(--td-component-stroke);
-    border-radius: 10px;
-    box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
-    padding: 6px;
-    min-width: 150px;
-    max-width: 200px;
-  }
-
-  .t-dropdown__item {
-    padding: 8px 12px;
-    border-radius: 6px;
-    margin: 2px 0;
-    transition: all 0.12s ease;
-    font-size: 13px;
-    color: var(--td-text-color-primary);
-    cursor: pointer;
-    min-width: auto !important;
-    max-width: 100% !important;
-    display: flex !important;
-    align-items: center;
-    width: 100%;
-
-    &:hover {
-      background: var(--td-bg-color-container);
-      color: var(--td-success-color);
-    }
-
-    .t-dropdown__item-icon {
-      flex-shrink: 0;
-      margin-right: 8px;
-      color: inherit;
-      display: flex;
-      align-items: center;
-      
-      .t-icon {
-        font-size: 16px;
-      }
-    }
-
-    .t-dropdown__item-text {
-      color: inherit !important;
-      font-size: 13px !important;
-      line-height: 1.5 !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      flex: 1;
-      min-width: 0;
-      display: block;
-    }
-  }
-}
+/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
 </style>
 <style scoped lang="less">
 .faq-manager {
@@ -3338,22 +3330,21 @@ watch(() => entries.value.map(e => ({
   display: flex;
   flex: 1;
   min-height: 0;
-  background: var(--td-bg-color-container);
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 10px;
-  overflow: hidden;
+  background: transparent;
+  border: none;
 }
 
-// 与列表页筛选区、文档型知识库标签栏一致：白底卡片感
+// 贴近整体系统设计语言的极简侧栏
 .faq-tag-panel {
-  width: 200px;
-  background: var(--td-bg-color-container);
+  width: 180px;
+  background: transparent;
+  border: none;
   border-right: 1px solid var(--td-component-stroke);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
-  padding: 16px;
-  flex-shrink: 0;
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.02);
+  padding: 0 16px 0 0;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   max-height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -3372,77 +3363,88 @@ watch(() => entries.value.map(e => ({
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    padding: 0 4px;
     color: var(--td-text-color-primary);
 
     .sidebar-title {
       display: flex;
       align-items: baseline;
-      gap: 4px;
-      font-size: 13px;
+      gap: 6px;
+      font-size: 14px;
       font-weight: 600;
+      letter-spacing: 0.5px;
 
       .sidebar-count {
         font-size: 12px;
-        color: var(--td-text-color-secondary);
+        color: var(--td-text-color-placeholder);
+        font-weight: 400;
       }
     }
 
     .sidebar-actions {
       display: flex;
       gap: 6px;
-      color: var(--td-text-color-placeholder);
+      align-items: center;
 
       .create-tag-btn {
         width: 24px;
         height: 24px;
         padding: 0;
-        border-radius: 6px;
+        border-radius: 4px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--td-success-color);
-        line-height: 1;
-        transition: background 0.2s ease, color 0.2s ease;
+        color: var(--td-text-color-secondary);
+        transition: all 0.2s ease;
+
+        .t-icon {
+          font-size: 16px;
+        }
 
         &:hover {
           background: var(--td-bg-color-secondarycontainer);
-          color: var(--td-brand-color-active);
+          color: var(--td-brand-color);
         }
-      }
-
-      .create-tag-plus {
-        line-height: 1;
       }
 
       .sidebar-action-icon {
         width: 24px;
         height: 24px;
-        border-radius: 6px;
+        border-radius: 4px;
         display: flex;
         align-items: center;
         justify-content: center;
+        color: var(--td-text-color-secondary);
         cursor: pointer;
-        transition: background 0.2s ease, color 0.2s ease;
+        transition: all 0.2s ease;
 
         &:hover {
           background: var(--td-bg-color-secondarycontainer);
-          color: var(--td-success-color);
+          color: var(--td-brand-color);
         }
       }
     }
   }
 
   .tag-search-bar {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    padding: 0 4px;
 
     :deep(.t-input) {
-      font-size: 12px;
-      background-color: var(--td-bg-color-container);
-      border-color: var(--td-component-stroke);
+      font-size: 13px;
+      background-color: var(--td-bg-color-secondarycontainer);
+      border-color: transparent;
       border-radius: 6px;
+      box-shadow: none !important;
+
+      &:hover,
+      &:focus,
+      &.t-is-focused {
+        border-color: var(--td-brand-color);
+        background-color: var(--td-bg-color-container);
+        box-shadow: none !important;
+      }
     }
 
     :deep(.t-input__inner) {
@@ -3479,13 +3481,13 @@ watch(() => entries.value.map(e => ({
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 9px 12px;
+      padding: 8px 8px;
       border-radius: 6px;
       color: var(--td-text-color-primary);
       cursor: pointer;
       transition: all 0.2s ease;
       font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 14px;
+      font-size: 13px;
       -webkit-font-smoothing: antialiased;
 
       .faq-tag-left {
@@ -3495,11 +3497,24 @@ watch(() => entries.value.map(e => ({
         min-width: 0;
         flex: 1;
 
-        .t-icon {
+        .t-icon,
+        .tag-hash-icon {
           flex-shrink: 0;
           color: var(--td-text-color-secondary);
-          font-size: 14px;
           transition: color 0.2s ease;
+        }
+
+        .t-icon {
+          font-size: 16px;
+        }
+
+        .tag-hash-icon {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-size: 16px;
+          font-weight: 500;
+          width: 16px;
+          text-align: center;
+          display: inline-block;
         }
       }
 
@@ -3510,10 +3525,9 @@ watch(() => entries.value.map(e => ({
         text-overflow: ellipsis;
         white-space: nowrap;
         font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 14px;
-        font-weight: 450;
+        font-size: 13px;
+        font-weight: 400;
         line-height: 1.4;
-        letter-spacing: 0.01em;
       }
 
       .faq-tag-right {
@@ -3526,37 +3540,34 @@ watch(() => entries.value.map(e => ({
 
       .faq-tag-count {
         font-size: 12px;
-        color: var(--td-text-color-secondary);
-        font-weight: 500;
-        min-width: 28px;
-        padding: 3px 7px;
-        border-radius: 8px;
-        background: var(--td-bg-color-secondarycontainer);
+        color: var(--td-text-color-placeholder);
+        font-weight: 400;
         transition: all 0.2s ease;
-        text-align: center;
-        box-sizing: border-box;
+        text-align: right;
+        padding-left: 8px;
+        background: transparent;
       }
 
       &:hover {
         background: var(--td-bg-color-secondarycontainer);
         color: var(--td-text-color-primary);
 
-        .faq-tag-left .t-icon {
-          color: var(--td-text-color-primary);
+        .faq-tag-left .t-icon,
+        .faq-tag-left .tag-hash-icon {
+          color: var(--td-text-color-secondary);
         }
 
         .faq-tag-count {
-          background: var(--td-bg-color-secondarycontainer);
-          color: var(--td-text-color-primary);
+          color: var(--td-text-color-secondary);
         }
       }
 
       &.active {
-        background: var(--td-success-color-light);
+        background: var(--td-brand-color-light);
         color: var(--td-brand-color);
-        font-weight: 500;
 
-        .faq-tag-left .t-icon {
+        .faq-tag-left .t-icon,
+        .faq-tag-left .tag-hash-icon {
           color: var(--td-brand-color);
         }
 
@@ -3565,13 +3576,7 @@ watch(() => entries.value.map(e => ({
         }
 
         .faq-tag-count {
-          background: var(--td-success-color-light);
           color: var(--td-brand-color);
-          font-weight: 600;
-        }
-
-        &:hover {
-          background: var(--td-success-color-light);
         }
       }
 
@@ -3615,22 +3620,22 @@ watch(() => entries.value.map(e => ({
         }
 
         :deep(.tag-action-btn.confirm) {
-          background: var(--td-success-color-light);
-          color: var(--td-brand-color-active);
-
-          &:hover {
-            background: var(--td-success-color-light);
-            color: var(--td-success-color);
-          }
-        }
-
-        :deep(.tag-action-btn.cancel) {
-          background: var(--td-bg-color-secondarycontainer);
+          background: transparent;
           color: var(--td-text-color-secondary);
 
           &:hover {
             background: var(--td-bg-color-secondarycontainer);
-            color: var(--td-text-color-secondary);
+            color: var(--td-brand-color);
+          }
+        }
+
+        :deep(.tag-action-btn.cancel) {
+          background: transparent;
+          color: var(--td-text-color-secondary);
+
+          &:hover {
+            background: var(--td-bg-color-secondarycontainer);
+            color: var(--td-error-color);
           }
         }
       }
@@ -3641,37 +3646,38 @@ watch(() => entries.value.map(e => ({
         max-width: 100%;
 
         :deep(.t-input) {
-          font-size: 12px;
+          font-size: 13px;
           background-color: transparent;
           border: none;
-          border-bottom: 1px solid var(--td-component-stroke);
           border-radius: 0;
           box-shadow: none;
-          padding-left: 0;
-          padding-right: 0;
+          padding: 0;
         }
 
         :deep(.t-input__wrap) {
           background-color: transparent;
           border: none;
-          border-bottom: 1px solid var(--td-component-stroke);
           border-radius: 0;
           box-shadow: none;
         }
 
         :deep(.t-input__inner) {
-          padding-left: 0;
-          padding-right: 0;
+          padding: 0;
           color: var(--td-text-color-primary);
-          caret-color: var(--td-text-color-primary);
+          caret-color: var(--td-brand-color);
         }
 
         :deep(.t-input:hover),
         :deep(.t-input.t-is-focused),
         :deep(.t-input__wrap:hover),
         :deep(.t-input__wrap.t-is-focused) {
-          border-bottom-color: var(--td-success-color);
+          border-color: transparent;
         }
+      }
+
+      .tag-more {
+        display: flex;
+        align-items: center;
       }
 
       .tag-more-btn {
@@ -3681,21 +3687,13 @@ watch(() => entries.value.map(e => ({
         align-items: center;
         justify-content: center;
         border-radius: 4px;
-        color: var(--td-text-color-secondary);
+        color: var(--td-text-color-placeholder);
         transition: all 0.2s ease;
-        opacity: 0.6;
 
         &:hover {
           background: var(--td-bg-color-secondarycontainer);
           color: var(--td-text-color-secondary);
-          opacity: 1;
         }
-      }
-
-
-      .tag-more {
-        display: flex;
-        align-items: center;
       }
 
       .tag-more-placeholder {
@@ -3717,12 +3715,13 @@ watch(() => entries.value.map(e => ({
 .faq-card-area {
   flex: 1;
   min-width: 0;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  min-height: 0;
+  padding: 0 0 0 16px;
+  border: none;
   overflow: hidden;
-  background: var(--td-bg-color-container);
+  background: transparent;
 }
 
 .faq-search-bar {
@@ -3747,7 +3746,7 @@ watch(() => entries.value.map(e => ({
       background: transparent;
       border: none;
       &:hover {
-        color: var(--td-text-color-secondary);
+        color: var(--td-brand-color);
         background: var(--td-bg-color-secondarycontainer);
       }
     }
@@ -3755,15 +3754,17 @@ watch(() => entries.value.map(e => ({
 
   :deep(.t-input) {
     font-size: 13px;
-    background-color: var(--td-bg-color-container);
-    border-color: var(--td-component-stroke);
+    background-color: var(--td-bg-color-secondarycontainer);
+    border-color: transparent;
     border-radius: 6px;
+    box-shadow: none !important;
 
     &:hover,
     &:focus,
     &.t-is-focused {
+      border-color: var(--td-brand-color);
       background-color: var(--td-bg-color-container);
-      border-color: var(--td-success-color);
+      box-shadow: none !important;
     }
   }
 
@@ -4235,10 +4236,40 @@ watch(() => entries.value.map(e => ({
   padding-right: 4px;
 }
 
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.faq-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  width: 100%;
+  animation: contentFadeIn 0.32s ease-out;
+}
+
+.faq-card-skeleton {
+  cursor: default;
+  height: auto;
+  .faq-card-header {
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--td-component-stroke);
+  }
+  .faq-card-body {
+    padding: 8px 0;
+  }
+  .faq-skel-footer {
+    padding-top: 8px;
+    border-top: 1px solid var(--td-component-stroke);
+  }
+}
+
 // 卡片列表样式 - 使用绝对定位实现瀑布流，下一行补齐上一行空缺
 .faq-card-list {
   position: relative;
   width: 100%;
+  animation: contentFadeIn 0.32s ease-out;
   min-width: 0;
 }
 
@@ -4477,46 +4508,7 @@ watch(() => entries.value.map(e => ({
   }
 }
 
-.card-menu {
-  display: flex;
-  flex-direction: column;
-}
-
-.card-menu-item {
-  display: flex;
-  align-items: center;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--td-text-color-primary);
-  font-family: "PingFang SC";
-  font-size: 14px;
-  font-weight: 400;
-
-  .menu-icon {
-    margin-right: 8px;
-    font-size: 16px;
-    flex-shrink: 0;
-  }
-
-  &:hover {
-    background: var(--td-bg-color-secondarycontainer);
-    color: var(--td-text-color-primary);
-  }
-
-  &.danger {
-    color: var(--td-text-color-primary);
-
-    &:hover {
-      background: var(--td-error-color-light);
-      color: var(--td-error-color);
-
-      .menu-icon {
-        color: var(--td-error-color);
-      }
-    }
-  }
-}
+/* card-menu 样式已统一至 @/assets/dropdown-menu.less，使用 .popup-menu 类 */
 
 .faq-question {
   flex: 1;
@@ -5147,16 +5139,7 @@ watch(() => entries.value.map(e => ({
 
 // 响应式布局由 JavaScript 动态计算，这里不需要媒体查询
 
-// 卡片菜单弹窗样式
-:deep(.faq-card-popup) {
-  z-index: 99 !important;
-
-  .t-popup__content {
-    padding: 4px 0 !important;
-    margin-top: 4px !important;
-    min-width: 120px;
-  }
-}
+// 卡片菜单弹窗样式已统一至 @/assets/dropdown-menu.less
 
 // FAQ 编辑器抽屉样式
 :deep(.faq-editor-drawer) {

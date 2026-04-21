@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -279,8 +280,10 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 		tagID = ""
 	}
 
+	channel := c.PostForm("channel")
+
 	// Create knowledge entry from the file
-	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName, tagID)
+	knowledge, err := h.kgService.CreateKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName, tagID, channel)
 	// Check for duplicate knowledge error
 	if err != nil {
 		if h.handleDuplicateKnowledgeError(c, err, knowledge, "file") {
@@ -347,6 +350,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		EnableMultimodel *bool  `json:"enable_multimodel"`
 		Title            string `json:"title"`
 		TagID            string `json:"tag_id"`
+		Channel          string `json:"channel"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error(ctx, "Failed to parse URL request", err)
@@ -359,6 +363,14 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 		secutils.SanitizeForLog(req.FileName),
 		secutils.SanitizeForLog(req.FileType),
 	)
+
+	// SSRF validation for user-supplied URL
+	if err := secutils.ValidateURLForSSRF(req.URL); err != nil {
+		logger.Warnf(ctx, "SSRF validation failed for knowledge URL: %v", err)
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("URL 未通过安全校验: %v", err)))
+		return
+	}
+
 	logger.Infof(ctx,
 		"Creating knowledge from URL, knowledge base ID: %s, URL: %s",
 		secutils.SanitizeForLog(kbID),
@@ -366,7 +378,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromURL(c *gin.Context) {
 	)
 
 	// Create knowledge entry from the URL
-	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.FileName, req.FileType, req.EnableMultimodel, req.Title, req.TagID)
+	knowledge, err := h.kgService.CreateKnowledgeFromURL(ctx, kbID, req.URL, req.FileName, req.FileType, req.EnableMultimodel, req.Title, req.TagID, req.Channel)
 	// Check for duplicate knowledge error
 	if err != nil {
 		if h.handleDuplicateKnowledgeError(c, err, knowledge, "url") {
@@ -431,7 +443,7 @@ func (h *KnowledgeHandler) CreateManualKnowledge(c *gin.Context) {
 		return
 	}
 
-	knowledge, err := h.kgService.CreateKnowledgeFromManual(ctx, kbID, &req)
+	knowledge, err := h.kgService.CreateKnowledgeFromManual(ctx, kbID, &req, req.Channel)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
@@ -615,6 +627,90 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 	})
 }
 
+// ClearKnowledgeBaseContents godoc
+// @Summary      清空知识库内容
+// @Description  删除知识库下的所有知识条目（异步任务）。知识库本身保留，仅清空其中的内容
+// @Tags         知识管理
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "知识库ID"
+// @Success      200  {object}  map[string]interface{}  "清空任务已提交"
+// @Failure      400  {object}  errors.AppError         "请求参数错误"
+// @Failure      403  {object}  errors.AppError         "权限不足"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /knowledge-bases/{id}/knowledge [delete]
+func (h *KnowledgeHandler) ClearKnowledgeBaseContents(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start clearing knowledge base contents")
+
+	kb, kbID, effectiveTenantID, permission, err := h.validateKnowledgeBaseAccess(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Only owner (admin with matching tenant) can clear knowledge base contents
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if kb.TenantID != tenantID || permission != types.OrgRoleAdmin {
+		c.Error(errors.NewForbiddenError("Only knowledge base owner can clear contents"))
+		return
+	}
+
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
+
+	knowledgeList, err := h.kgService.ListKnowledgeByKnowledgeBaseID(ctx, kbID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("Failed to list knowledge entries").WithDetails(err.Error()))
+		return
+	}
+
+	if len(knowledgeList) == 0 {
+		logger.Infof(ctx, "Knowledge base %s is already empty", secutils.SanitizeForLog(kbID))
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Knowledge base is already empty",
+			"data":    gin.H{"deleted_count": 0},
+		})
+		return
+	}
+
+	knowledgeIDs := make([]string, 0, len(knowledgeList))
+	for _, knowledge := range knowledgeList {
+		knowledgeIDs = append(knowledgeIDs, knowledge.ID)
+	}
+
+	payload := types.KnowledgeListDeletePayload{
+		TenantID:     effectiveTenantID,
+		KnowledgeIDs: knowledgeIDs,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to marshal knowledge list delete payload: %v", err)
+		c.Error(errors.NewInternalServerError("Failed to create cleanup task"))
+		return
+	}
+
+	task := asynq.NewTask(types.TypeKnowledgeListDelete, payloadBytes,
+		asynq.Queue("low"), asynq.MaxRetry(3))
+	info, err := h.asynqClient.Enqueue(task)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to enqueue knowledge list delete task: %v", err)
+		c.Error(errors.NewInternalServerError("Failed to enqueue cleanup task"))
+		return
+	}
+
+	logger.Infof(ctx, "Knowledge base contents clear task enqueued: %s, kb_id: %s, count: %d",
+		info.ID, secutils.SanitizeForLog(kbID), len(knowledgeIDs))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Knowledge base contents clear task submitted",
+		"data":    gin.H{"deleted_count": len(knowledgeIDs)},
+	})
+}
+
 // DownloadKnowledgeFile godoc
 // @Summary      下载知识文件
 // @Description  下载知识条目关联的原始文件
@@ -664,7 +760,8 @@ func (h *KnowledgeHandler) DownloadKnowledgeFile(c *gin.Context) {
 	// Set response headers for file download
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-Transfer-Encoding", "binary")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	cd := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	c.Header("Content-Disposition", cd)
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Expires", "0")
 	c.Header("Cache-Control", "must-revalidate")
@@ -765,7 +862,7 @@ func (h *KnowledgeHandler) PreviewKnowledgeFile(c *gin.Context) {
 
 	contentType := mimeTypeByExt(filename)
 	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%s", filename))
+	c.Header("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filename}))
 	c.Header("Cache-Control", "private, max-age=3600")
 
 	c.Stream(func(w io.Writer) bool {
@@ -816,6 +913,10 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 		return
 	}
 
+	// agentAllowedKBIDs restricts results to the agent's configured KB scope.
+	// nil = no agent restriction; empty slice = agent has no KB access (none mode).
+	var agentAllowedKBIDs []string
+
 	// Optional agent_id: when using shared agent, resolve agent and use its tenant for batch retrieval (so shared KB files can be loaded after refresh)
 	if agentID := secutils.SanitizeForLog(req.AgentID); agentID != "" && h.agentShareService != nil {
 		userIDVal, ok := c.Get(types.UserIDContextKey.String())
@@ -836,12 +937,21 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 			return
 		}
 		effectiveTenantID = agent.TenantID
-		logger.Infof(ctx, "Batch retrieving knowledge with agent_id, effective tenant ID: %d, IDs count: %d",
-			effectiveTenantID, len(req.IDs))
+		agentAllowedKBIDs = resolveAgentAllowedKBIDs(agent)
+
+		if agentAllowedKBIDs != nil && len(agentAllowedKBIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"success": true, "data": []*types.Knowledge{}})
+			return
+		}
+		logger.Infof(ctx, "Batch retrieving knowledge with agent_id, effective tenant ID: %d, IDs count: %d, allowed KBs: %v",
+			effectiveTenantID, len(req.IDs), agentAllowedKBIDs)
 	}
 
 	var knowledges []*types.Knowledge
 	var err error
+
+	// scopeKBID tracks the single KB the results must belong to (set by explicit kb_id).
+	var scopeKBID string
 
 	// Optional kb_id: validate KB access and use effective tenant for shared KB
 	if kbID := secutils.SanitizeForLog(req.KBID); kbID != "" {
@@ -850,6 +960,11 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 			c.Error(err)
 			return
 		}
+		if agentAllowedKBIDs != nil && !sliceContains(agentAllowedKBIDs, kbID) {
+			c.Error(errors.NewForbiddenError("Knowledge base not accessible through this agent"))
+			return
+		}
+		scopeKBID = kbID
 		effectiveTenantID = effID
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, effectiveTenantID)
 
@@ -863,6 +978,28 @@ func (h *KnowledgeHandler) GetKnowledgeBatch(c *gin.Context) {
 			effectiveTenantID, len(req.IDs))
 
 		knowledges, err = h.kgService.GetKnowledgeBatchWithSharedAccess(ctx, effectiveTenantID, req.IDs)
+	}
+
+	// Build the effective allowed-KB set from both scopeKBID and agentAllowedKBIDs.
+	// scopeKBID (from explicit kb_id) restricts to a single KB;
+	// agentAllowedKBIDs (from shared agent) restricts to the agent's configured KBs.
+	var allowedKBSet map[string]bool
+	if scopeKBID != "" {
+		allowedKBSet = map[string]bool{scopeKBID: true}
+	} else if agentAllowedKBIDs != nil {
+		allowedKBSet = make(map[string]bool, len(agentAllowedKBIDs))
+		for _, id := range agentAllowedKBIDs {
+			allowedKBSet[id] = true
+		}
+	}
+	if allowedKBSet != nil && len(knowledges) > 0 {
+		filtered := make([]*types.Knowledge, 0, len(knowledges))
+		for _, k := range knowledges {
+			if allowedKBSet[k.KnowledgeBaseID] {
+				filtered = append(filtered, k)
+			}
+		}
+		knowledges = filtered
 	}
 
 	if err != nil {
@@ -1074,7 +1211,8 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("请求参数不合法").WithDetails(err.Error()))
 		return
 	}
-	// Resolve effective tenant: explicit kb_id, or infer from first knowledge ID (for shared KB when frontend doesn't send kb_id)
+	// Resolve effective tenant and the authorized KB scope.
+	var authorizedKBID string
 	if kbID := secutils.SanitizeForLog(req.KBID); kbID != "" {
 		_, _, effID, permission, err := h.validateKnowledgeBaseAccessWithKBID(c, kbID)
 		if err != nil {
@@ -1085,6 +1223,7 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 			c.Error(errors.NewForbiddenError("No permission to update knowledge tags"))
 			return
 		}
+		authorizedKBID = kbID
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, effID)
 	} else if len(req.Updates) > 0 {
 		// No kb_id: infer from first knowledge ID so shared-KB updates work without client sending kb_id
@@ -1094,15 +1233,16 @@ func (h *KnowledgeHandler) UpdateKnowledgeTagBatch(c *gin.Context) {
 			break
 		}
 		if firstKnowledgeID != "" {
-			_, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, firstKnowledgeID, types.OrgRoleEditor)
+			knowledge, effCtx, err := h.resolveKnowledgeAndValidateKBAccess(c, firstKnowledgeID, types.OrgRoleEditor)
 			if err != nil {
 				c.Error(err)
 				return
 			}
+			authorizedKBID = knowledge.KnowledgeBaseID
 			ctx = effCtx
 		}
 	}
-	if err := h.kgService.UpdateKnowledgeTagBatch(ctx, req.Updates); err != nil {
+	if err := h.kgService.UpdateKnowledgeTagBatch(ctx, authorizedKBID, req.Updates); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)
 		return
@@ -1473,4 +1613,33 @@ func (h *KnowledgeHandler) GetKnowledgeMoveProgress(c *gin.Context) {
 		"success": true,
 		"data":    progress,
 	})
+}
+
+// resolveAgentAllowedKBIDs returns the set of knowledge base IDs that the
+// shared agent is allowed to access based on its KBSelectionMode config.
+// Returns nil when no restriction applies ("all" mode), or a concrete slice
+// (possibly empty for "none" mode) when the results must be filtered.
+func resolveAgentAllowedKBIDs(agent *types.CustomAgent) []string {
+	switch agent.Config.KBSelectionMode {
+	case "all":
+		return nil
+	case "none":
+		return []string{}
+	case "selected":
+		return agent.Config.KnowledgeBases
+	default:
+		if len(agent.Config.KnowledgeBases) > 0 {
+			return agent.Config.KnowledgeBases
+		}
+		return nil
+	}
+}
+
+func sliceContains(ss []string, target string) bool {
+	for _, s := range ss {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }

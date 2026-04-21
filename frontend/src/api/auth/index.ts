@@ -39,6 +39,20 @@ export interface LoginResponse {
   refresh_token?: string
 }
 
+export interface OIDCAuthURLResponse {
+  success: boolean
+  authorization_url?: string
+  state?: string
+  message?: string
+}
+
+export interface OIDCConfigResponse {
+  success: boolean
+  enabled: boolean
+  provider_display_name?: string
+  message?: string
+}
+
 // 用户注册接口
 export interface RegisterRequest {
   username: string
@@ -131,6 +145,37 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
 }
 
 /**
+ * 获取 OIDC 登录跳转地址
+ */
+export async function getOIDCAuthorizationURL(redirectURI: string): Promise<OIDCAuthURLResponse> {
+  try {
+    const response = await get(`/api/v1/auth/oidc/url?redirect_uri=${encodeURIComponent(redirectURI)}`)
+    return response as unknown as OIDCAuthURLResponse
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || t('error.auth.loginFailed')
+    }
+  }
+}
+
+/**
+ * 获取 OIDC 登录配置
+ */
+export async function getOIDCConfig(): Promise<OIDCConfigResponse> {
+  try {
+    const response = await get('/api/v1/auth/oidc/config')
+    return response as unknown as OIDCConfigResponse
+  } catch (error: any) {
+    return {
+      success: false,
+      enabled: false,
+      message: error.message || t('error.auth.loginFailed')
+    }
+  }
+}
+
+/**
  * 用户注册
  */
 export async function register(data: RegisterRequest): Promise<RegisterResponse> {
@@ -141,6 +186,21 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
     return {
       success: false,
       message: error.message || t('error.auth.registerFailed')
+    }
+  }
+}
+
+/**
+ * Lite 版自动初始化（创建默认用户/租户 + 签发令牌）
+ */
+export async function autoSetup(): Promise<LoginResponse> {
+  try {
+    const response = await post('/api/v1/auth/auto-setup', {})
+    return response as unknown as LoginResponse
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error.message || 'Auto-setup unavailable'
     }
   }
 }

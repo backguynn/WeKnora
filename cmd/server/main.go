@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,18 +60,27 @@ func main() {
 	) error {
 		// Create HTTP server
 		server := &http.Server{
-			Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 			Handler: router,
 		}
 
+		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		listener, err := listenWithRetry(addr, 10, 300*time.Millisecond)
+		if err != nil {
+			return fmt.Errorf("failed to start server: %v", err)
+		}
+
 		ctx, done := context.WithCancel(context.Background())
+
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+		signal.Notify(signals, shutdownSignals...)
 		go func() {
 			sig := <-signals
 			logger.Infof(context.Background(), "Received signal: %v, starting server shutdown...", sig)
 
-			// Create a context with timeout for server shutdown
+			// Close listener first to release port immediately,
+			// so the next process can bind during our graceful drain.
+			listener.Close()
+
 			shutdownTimeout := cfg.Server.ShutdownTimeout
 			if shutdownTimeout == 0 {
 				shutdownTimeout = 30 * time.Second
@@ -80,11 +88,18 @@ func main() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer shutdownCancel()
 
+			// Second signal → force close all connections immediately
+			go func() {
+				sig := <-signals
+				logger.Warnf(context.Background(), "Received second signal: %v, forcing shutdown...", sig)
+				server.Close()
+			}()
+
 			if err := server.Shutdown(shutdownCtx); err != nil {
-				logger.Fatalf(context.Background(), "Server forced to shutdown: %v", err)
+				logger.Errorf(context.Background(), "Server forced to shutdown: %v", err)
+				server.Close()
 			}
 
-			// Clean up all registered resources
 			logger.Info(context.Background(), "Cleaning up resources...")
 			errs := resourceCleaner.Cleanup(shutdownCtx)
 			if len(errs) > 0 {
@@ -94,13 +109,11 @@ func main() {
 			done()
 		}()
 
-		// Start server
-		logger.Infof(context.Background(), "Server is running at %s:%d", cfg.Server.Host, cfg.Server.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			return fmt.Errorf("failed to start server: %v", err)
+		logger.Infof(context.Background(), "Server is running at %s", addr)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("server error: %v", err)
 		}
 
-		// Wait for shutdown signal
 		<-ctx.Done()
 		return nil
 	})

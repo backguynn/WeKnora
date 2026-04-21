@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -61,14 +63,13 @@ func (r *tenantRepository) SearchTenants(ctx context.Context, keyword string, te
 
 	// Build search conditions
 	if tenantID > 0 && keyword != "" {
-		// When both tenantID and keyword are provided, use OR to match either
-		query = query.Where("id = ? OR name LIKE ? OR description LIKE ?", tenantID, "%"+keyword+"%", "%"+keyword+"%")
+		escaped := escapeLikeKeyword(keyword)
+		query = query.Where("id = ? OR name LIKE ? OR description LIKE ?", tenantID, "%"+escaped+"%", "%"+escaped+"%")
 	} else if tenantID > 0 {
-		// Filter by tenant ID only
 		query = query.Where("id = ?", tenantID)
 	} else if keyword != "" {
-		// Filter by keyword only (search in name and description)
-		query = query.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		escaped := escapeLikeKeyword(keyword)
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+escaped+"%", "%"+escaped+"%")
 	}
 
 	// Count total
@@ -93,9 +94,28 @@ func (r *tenantRepository) SearchTenants(ctx context.Context, keyword string, te
 	return tenants, total, nil
 }
 
-// UpdateTenant updates tenant
+// UpdateTenant updates tenant.
+// Handles api_key carefully because db.Updates() does not trigger the BeforeSave
+// GORM hook. Without this guard, AfterFind-decrypted plaintext would silently
+// overwrite the encrypted value in the database.
+//
+// Strategy:
+//   - enc:v1:… (pre-encrypted by CreateTenant / UpdateAPIKey): write as-is.
+//   - plaintext (decrypted by AfterFind): blank it so GORM skips the column.
+//   - SYSTEM_AES_KEY not set: write as-is (encryption disabled).
+//
+// The caller's in-memory struct is always restored after the write.
 func (r *tenantRepository) UpdateTenant(ctx context.Context, tenant *types.Tenant) error {
-	return r.db.WithContext(ctx).Model(&types.Tenant{}).Where("id = ?", tenant.ID).Updates(tenant).Error
+	origAPIKey := tenant.APIKey
+	if key := utils.GetAESKey(); key != nil && tenant.APIKey != "" &&
+		!strings.HasPrefix(tenant.APIKey, utils.EncPrefix) {
+		// Plaintext from AfterFind — do not write back; let the DB keep its
+		// existing encrypted value untouched.
+		tenant.APIKey = ""
+	}
+	err := r.db.WithContext(ctx).Model(&types.Tenant{}).Where("id = ?", tenant.ID).Updates(tenant).Error
+	tenant.APIKey = origAPIKey
+	return err
 }
 
 // DeleteTenant deletes tenant

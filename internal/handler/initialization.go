@@ -13,10 +13,12 @@ import (
 	"sync"
 	"time"
 
-	chatpipline "github.com/Tencent/WeKnora/internal/application/service/chat_pipline"
+	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
+	"github.com/Tencent/WeKnora/internal/assets"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
@@ -89,6 +91,7 @@ type KBModelConfigRequest struct {
 	LLMModelID       string           `json:"llmModelId"       binding:"required"`
 	EmbeddingModelID string           `json:"embeddingModelId" binding:"required"`
 	VLMConfig        *types.VLMConfig `json:"vlm_config"`
+	ASRConfig        *types.ASRConfig `json:"asr_config"`
 
 	// 文档分块配置
 	DocumentSplitting struct {
@@ -281,6 +284,19 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		kb.VLMConfig.ModelID = ""
 	}
 
+	// 处理ASR语音识别配置
+	kb.ASRConfig = types.ASRConfig{}
+	if req.ASRConfig != nil && req.ASRConfig.Enabled && req.ASRConfig.ModelID != "" {
+		asrModel, err := h.modelService.GetModelByID(ctx, req.ASRConfig.ModelID)
+		if err != nil || asrModel == nil {
+			logger.Warn(ctx, "ASR model not found")
+		} else {
+			kb.ASRConfig.Enabled = true
+			kb.ASRConfig.ModelID = req.ASRConfig.ModelID
+			kb.ASRConfig.Language = req.ASRConfig.Language
+		}
+	}
+
 	// 更新文档分块配置
 	if req.DocumentSplitting.ChunkSize > 0 {
 		kb.ChunkingConfig.ChunkSize = req.DocumentSplitting.ChunkSize
@@ -320,9 +336,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		knowledgeList, err := h.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx,
 			kbIdStr, &types.Pagination{Page: 1, PageSize: 1}, "", "", "")
 		if err == nil && knowledgeList != nil && knowledgeList.Total > 0 {
-			logger.Error(ctx, "Cannot change storage engine when files exist")
-			c.Error(errors.NewBadRequestError("知识库中已有文件，无法切换存储引擎"))
-			return
+			logger.Warn(ctx, "Storage engine changed with existing files, old files may become inaccessible")
 		}
 	}
 	kb.SetStorageProvider(provider)
@@ -473,6 +487,30 @@ func (h *InitializationHandler) getKnowledgeBaseForInitialization(ctx context.Co
 }
 
 func (h *InitializationHandler) validateInitializationConfigs(ctx context.Context, req *InitializationRequest) error {
+	// SSRF validation for all user-supplied BaseURLs
+	urlsToCheck := []struct {
+		label string
+		url   string
+	}{
+		{"LLM BaseURL", req.LLM.BaseURL},
+		{"Embedding BaseURL", req.Embedding.BaseURL},
+		{"Rerank BaseURL", req.Rerank.BaseURL},
+	}
+	if req.Multimodal.VLM != nil {
+		urlsToCheck = append(urlsToCheck, struct {
+			label string
+			url   string
+		}{"VLM BaseURL", req.Multimodal.VLM.BaseURL})
+	}
+	for _, u := range urlsToCheck {
+		if u.url != "" {
+			if err := utils.ValidateURLForSSRF(u.url); err != nil {
+				logger.Warnf(ctx, "SSRF validation failed for %s: %v", u.label, err)
+				return errors.NewBadRequestError(fmt.Sprintf("%s 未通过安全校验: %v", u.label, err))
+			}
+		}
+	}
+
 	if err := h.validateMultimodalConfig(ctx, req); err != nil {
 		return err
 	}
@@ -1430,6 +1468,7 @@ type RemoteModelCheckRequest struct {
 	ModelName string `json:"modelName" binding:"required"`
 	BaseURL   string `json:"baseUrl"   binding:"required"`
 	APIKey    string `json:"apiKey"`
+	Provider  string `json:"provider"`
 }
 
 // CheckRemoteModel godoc
@@ -1463,13 +1502,34 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 		return
 	}
 
+	// SSRF validation
+	if err := utils.ValidateURLForSSRF(req.BaseURL); err != nil {
+		logger.Warnf(ctx, "SSRF validation failed for remote model BaseURL: %v", err)
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+		return
+	}
+	tenantInfo, ok := types.TenantInfoFromContext(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant info not found")
+		c.Error(errors.NewBadRequestError("租户信息未找到"))
+		return
+	}
+	var appID, appSecret string
+	if creds := tenantInfo.Credentials.GetWeKnoraCloud(); creds != nil {
+		appID = creds.AppID
+		appSecret = creds.AppSecret
+	}
+
 	// 创建模型配置进行测试
 	modelConfig := &types.Model{
 		Name:   req.ModelName,
 		Source: "remote",
 		Parameters: types.ModelParameters{
-			BaseURL: req.BaseURL,
-			APIKey:  req.APIKey,
+			BaseURL:   req.BaseURL,
+			APIKey:    req.APIKey,
+			Provider:  req.Provider,
+			AppID:     appID,
+			AppSecret: appSecret,
 		},
 		Type: "llm", // 默认类型，实际检查时不区分具体类型
 	}
@@ -1520,6 +1580,15 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 		return
 	}
 
+	// SSRF validation for embedding BaseURL
+	if req.BaseURL != "" {
+		if err := utils.ValidateURLForSSRF(req.BaseURL); err != nil {
+			logger.Warnf(ctx, "SSRF validation failed for embedding BaseURL: %v", err)
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+			return
+		}
+	}
+
 	// 检查是否是阿里云多模态 embedding 模型（暂不支持）
 	if strings.ToLower(req.Provider) == "aliyun" {
 		modelNameLower := strings.ToLower(req.ModelName)
@@ -1536,6 +1605,17 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 			return
 		}
 	}
+	tenantInfo, ok := types.TenantInfoFromContext(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant info not found")
+		c.Error(errors.NewBadRequestError("租户信息未找到"))
+		return
+	}
+	var appID, appSecret string
+	if creds := tenantInfo.Credentials.GetWeKnoraCloud(); creds != nil {
+		appID = creds.AppID
+		appSecret = creds.AppSecret
+	}
 
 	// 构造 embedder 配置
 	cfg := embedding.Config{
@@ -1547,6 +1627,8 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 		Dimensions:           req.Dimension,
 		ModelID:              "",
 		Provider:             req.Provider,
+		AppID:                appID,
+		AppSecret:            appSecret,
 	}
 
 	emb, err := embedding.NewEmbedder(cfg, h.pooler, h.ollamaService)
@@ -1590,6 +1672,9 @@ func (h *InitializationHandler) checkRemoteModelConnection(ctx context.Context,
 		ModelName: model.Name,
 		APIKey:    model.Parameters.APIKey,
 		ModelID:   model.Name,
+		Provider:  model.Parameters.Provider,
+		AppID:     model.Parameters.AppID,
+		AppSecret: model.Parameters.AppSecret,
 	}
 
 	// 创建聊天实例
@@ -1615,15 +1700,20 @@ func (h *InitializationHandler) checkRemoteModelConnection(ctx context.Context,
 	// 使用聊天实例进行测试
 	_, err = chatInstance.Chat(ctx, testMessages, testOptions)
 	if err != nil {
+		errMsg := err.Error()
 		// 根据错误类型返回不同的错误信息
-		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "unauthorized") {
+		if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "unauthorized") {
 			return false, "认证失败，请检查API Key"
-		} else if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "forbidden") {
-			return false, "权限不足，请检查API Key权限：" + err.Error()
-		} else if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+		} else if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "forbidden") {
+			return false, "权限不足，请检查API Key权限：" + errMsg
+		} else if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") {
 			return false, "API端点不存在，请检查Base URL"
-		} else if strings.Contains(err.Error(), "timeout") {
+		} else if strings.Contains(errMsg, "timeout") {
 			return false, "连接超时，请检查网络连接"
+		} else if strings.Contains(errMsg, "status code: 400") {
+			// 400 错误说明 API 端点可达、认证通过，只是请求参数不兼容（如 max_tokens vs max_completion_tokens）
+			// 视为连接成功
+			return true, "连接正常，模型可用"
 		} else {
 			return false, fmt.Sprintf("连接失败: %v", err)
 		}
@@ -1644,6 +1734,18 @@ func (h *InitializationHandler) checkRerankModelConnection(ctx context.Context,
 		ModelName: modelName,
 		Source:    types.ModelSourceRemote, // 默认值，实际会根据URL判断
 	}
+	tenantInfo, ok := types.TenantInfoFromContext(ctx)
+	if !ok {
+		logger.Error(ctx, "Tenant info not found")
+		return false, "租户信息未找到"
+	}
+	var appID, appSecret string
+	if creds := tenantInfo.Credentials.GetWeKnoraCloud(); creds != nil {
+		appID = creds.AppID
+		appSecret = creds.AppSecret
+	}
+	config.AppID = appID
+	config.AppSecret = appSecret
 
 	// 创建Reranker实例
 	reranker, err := rerank.NewReranker(config)
@@ -1707,12 +1809,123 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 		return
 	}
 
+	// SSRF validation
+	if err := utils.ValidateURLForSSRF(req.BaseURL); err != nil {
+		logger.Warnf(ctx, "SSRF validation failed for rerank BaseURL: %v", err)
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+		return
+	}
+
 	// 检查Rerank模型连接和功能
 	available, message := h.checkRerankModelConnection(
 		ctx, req.ModelName, req.BaseURL, req.APIKey,
 	)
 
 	logger.Infof(ctx, "Rerank model check completed, available: %v, message: %s", available, message)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"available": available,
+			"message":   message,
+		},
+	})
+}
+
+// CheckASRModel godoc
+// @Summary      检查ASR模型
+// @Description  检查ASR（语音识别）模型连接是否正常，通过发送一段静默音频测试 /v1/audio/transcriptions 端点
+// @Tags         初始化
+// @Accept       json
+// @Produce      json
+// @Param        request  body      object  true  "ASR检查请求"
+// @Success      200      {object}  map[string]interface{}  "检查结果"
+// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /initialization/models/asr/check [post]
+func (h *InitializationHandler) CheckASRModel(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	logger.Info(ctx, "Checking ASR model connection")
+
+	var req struct {
+		ModelName string `json:"modelName" binding:"required"`
+		BaseURL   string `json:"baseUrl" binding:"required"`
+		APIKey    string `json:"apiKey"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse ASR model check request", err)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	if req.ModelName == "" || req.BaseURL == "" {
+		logger.Error(ctx, "Model name and base URL are required for ASR check")
+		c.Error(errors.NewBadRequestError("模型名称和Base URL不能为空"))
+		return
+	}
+
+	// SSRF validation
+	if err := utils.ValidateURLForSSRF(req.BaseURL); err != nil {
+		logger.Warnf(ctx, "SSRF validation failed for ASR BaseURL: %v", err)
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("Base URL 未通过安全校验: %v", err)))
+		return
+	}
+
+	// 使用 ASR 模块测试连接：发送一段极短的静默 WAV 音频
+	asrInstance, err := asr.NewASR(&asr.Config{
+		BaseURL:   req.BaseURL,
+		ModelName: req.ModelName,
+		APIKey:    req.APIKey,
+		Source:    "remote",
+	})
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create ASR instance for check: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": gin.H{
+				"available": false,
+				"message":   fmt.Sprintf("创建ASR实例失败: %v", err),
+			},
+		})
+		return
+	}
+
+	res, err := asrInstance.Transcribe(ctx, assets.ASRTestWAV, "asr_test.wav")
+	var text string
+	if res != nil {
+		text = res.Text
+	}
+	available := true
+	message := "ASR连接成功"
+
+	if err != nil {
+		errMsg := err.Error()
+		switch {
+		case strings.Contains(errMsg, "401") || strings.Contains(errMsg, "Unauthorized") || strings.Contains(errMsg, "authentication"):
+			available = false
+			message = "认证失败，请检查API Key"
+		case strings.Contains(errMsg, "404") || strings.Contains(errMsg, "Not Found"):
+			available = false
+			message = "API端点不存在，请检查Base URL"
+		case strings.Contains(errMsg, "connection refused") || strings.Contains(errMsg, "no such host") || strings.Contains(errMsg, "dial tcp"):
+			available = false
+			message = "无法连接到服务器，请检查Base URL"
+		case strings.Contains(errMsg, "model") && strings.Contains(errMsg, "not found"):
+			available = false
+			message = "模型不存在，请检查模型名称"
+		default:
+			logger.Infof(ctx, "ASR check got non-fatal error (endpoint reachable): %v", err)
+			available = true
+			message = fmt.Sprintf("ASR端点可达（非致命错误: %s）", errMsg)
+		}
+	} else if text != "" {
+		message = fmt.Sprintf("ASR连接成功，转写结果: %s", text)
+	}
+
+	logger.Infof(ctx, "ASR model check completed, available: %v, message: %s", available, message)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1790,6 +2003,14 @@ func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("VLM模型名称和Base URL不能为空"))
 		return
 	}
+
+	// SSRF validation for VLM BaseURL
+	if err := utils.ValidateURLForSSRF(req.VLMBaseURL); err != nil {
+		logger.Warnf(ctx, "SSRF validation failed for VLM BaseURL: %v", err)
+		c.Error(errors.NewBadRequestError(fmt.Sprintf("VLM Base URL 未通过安全校验: %v", err)))
+		return
+	}
+
 	switch req.StorageType {
 	case "cos":
 		// 必填：SecretID/SecretKey/Region/BucketName/AppID；PathPrefix 可选
@@ -1954,16 +2175,9 @@ func (h *InitializationHandler) testMultimodalWithDocReader(
 
 // TextRelationExtractionRequest 文本关系提取请求结构
 type TextRelationExtractionRequest struct {
-	Text      string    `json:"text"      binding:"required"`
-	Tags      []string  `json:"tags"      binding:"required"`
-	LLMConfig LLMConfig `json:"llm_config"`
-}
-
-type LLMConfig struct {
-	Source    string `json:"source"`
-	ModelName string `json:"model_name"`
-	BaseUrl   string `json:"base_url"`
-	ApiKey    string `json:"api_key"`
+	Text    string   `json:"text"     binding:"required"`
+	Tags    []string `json:"tags"     binding:"required"`
+	ModelID string   `json:"model_id" binding:"required"`
 }
 
 // TextRelationExtractionResponse 文本关系提取响应结构
@@ -2011,8 +2225,16 @@ func (h *InitializationHandler) ExtractTextRelations(c *gin.Context) {
 		return
 	}
 
+	// 根据模型ID获取chat模型
+	chatModel, err := h.modelService.GetChatModel(ctx, req.ModelID)
+	if err != nil {
+		logger.Error(ctx, "获取模型失败", err)
+		c.Error(errors.NewBadRequestError("获取模型失败: " + err.Error()))
+		return
+	}
+
 	// 调用模型服务进行文本关系提取
-	result, err := h.extractRelationsFromText(ctx, req.Text, req.Tags, req.LLMConfig)
+	result, err := h.extractRelationsFromText(ctx, req.Text, req.Tags, chatModel)
 	if err != nil {
 		logger.Error(ctx, "文本关系提取失败", err)
 		c.Error(errors.NewInternalServerError("文本关系提取失败: " + err.Error()))
@@ -2030,27 +2252,15 @@ func (h *InitializationHandler) extractRelationsFromText(
 	ctx context.Context,
 	text string,
 	tags []string,
-	llm LLMConfig,
+	chatModel chat.Chat,
 ) (*TextRelationExtractionResponse, error) {
-	chatModel, err := chat.NewChat(&chat.ChatConfig{
-		ModelID:   "initialization",
-		APIKey:    llm.ApiKey,
-		BaseURL:   llm.BaseUrl,
-		ModelName: llm.ModelName,
-		Source:    types.ModelSource(llm.Source),
-	}, h.ollamaService)
-	if err != nil {
-		logger.Error(ctx, "初始化模型服务失败", err)
-		return nil, err
-	}
-
 	template := &types.PromptTemplateStructured{
 		Description: h.config.ExtractManager.ExtractGraph.Description,
 		Tags:        tags,
 		Examples:    h.config.ExtractManager.ExtractGraph.Examples,
 	}
 
-	extractor := chatpipline.NewExtractor(chatModel, template)
+	extractor := chatpipeline.NewExtractor(chatModel, template)
 	graph, err := extractor.Extract(ctx, text)
 	if err != nil {
 		logger.Error(ctx, "文本关系提取失败", err)
@@ -2068,8 +2278,8 @@ func (h *InitializationHandler) extractRelationsFromText(
 
 // FabriTextRequest is a request for generating example text
 type FabriTextRequest struct {
-	Tags      []string  `json:"tags"`
-	LLMConfig LLMConfig `json:"llm_config"`
+	Tags    []string `json:"tags"`
+	ModelID string   `json:"model_id" binding:"required"`
 }
 
 // FabriTextResponse is a response for generating example text
@@ -2099,7 +2309,14 @@ func (h *InitializationHandler) FabriText(c *gin.Context) {
 		return
 	}
 
-	result, err := h.fabriText(ctx, req.Tags, req.LLMConfig)
+	chatModel, err := h.modelService.GetChatModel(ctx, req.ModelID)
+	if err != nil {
+		logger.Error(ctx, "获取模型失败", err)
+		c.Error(errors.NewBadRequestError("获取模型失败: " + err.Error()))
+		return
+	}
+
+	result, err := h.fabriText(ctx, req.Tags, chatModel)
 	if err != nil {
 		logger.Error(ctx, "failed to generate fabri text", err)
 		c.Error(errors.NewInternalServerError("failed to generate fabri text: " + err.Error()))
@@ -2113,19 +2330,7 @@ func (h *InitializationHandler) FabriText(c *gin.Context) {
 }
 
 // fabriText generates example text
-func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, llm LLMConfig) (string, error) {
-	chatModel, err := chat.NewChat(&chat.ChatConfig{
-		ModelID:   "initialization",
-		APIKey:    llm.ApiKey,
-		BaseURL:   llm.BaseUrl,
-		ModelName: llm.ModelName,
-		Source:    types.ModelSource(llm.Source),
-	}, h.ollamaService)
-	if err != nil {
-		logger.Error(ctx, "初始化模型服务失败", err)
-		return "", err
-	}
-
+func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, chatModel chat.Chat) (string, error) {
 	content := h.config.ExtractManager.FabriText.WithNoTag
 	if len(tags) > 0 {
 		tagStr, _ := json.Marshal(tags)
@@ -2148,9 +2353,7 @@ func (h *InitializationHandler) fabriText(ctx context.Context, tags []string, ll
 }
 
 // FabriTagRequest is a request for generating tags
-type FabriTagRequest struct {
-	LLMConfig LLMConfig `json:"llm_config"`
-}
+type FabriTagRequest struct{}
 
 // FabriTagResponse is a response for generating tags
 type FabriTagResponse struct {

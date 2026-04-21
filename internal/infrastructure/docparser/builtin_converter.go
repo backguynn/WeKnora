@@ -15,7 +15,8 @@ import (
 var simpleFormats = map[string]bool{
 	"md": true, "markdown": true,
 	"txt": true, "text": true,
-	"csv": true,
+	"csv":  true,
+	"json": true,
 }
 
 var imageFormats = map[string]bool{
@@ -23,8 +24,15 @@ var imageFormats = map[string]bool{
 	"bmp": true, "tiff": true, "webp": true,
 }
 
+var audioFormats = map[string]bool{
+	"mp3": true, "wav": true, "m4a": true, "flac": true, "ogg": true,
+}
+
 func init() {
 	for k := range imageFormats {
+		simpleFormats[k] = true
+	}
+	for k := range audioFormats {
 		simpleFormats[k] = true
 	}
 }
@@ -56,8 +64,16 @@ func (b *SimpleFormatReader) Read(_ context.Context, req *types.ReadRequest) (*t
 			return nil, fmt.Errorf("csv conversion failed: %w", err)
 		}
 		return &types.ReadResult{MarkdownContent: md}, nil
+	case ft == "json":
+		md, err := jsonToMarkdown(req.FileContent)
+		if err != nil {
+			return nil, fmt.Errorf("json conversion failed: %w", err)
+		}
+		return &types.ReadResult{MarkdownContent: md}, nil
 	case imageFormats[ft]:
 		return imageToResult(req.FileName, req.FileContent), nil
+	case audioFormats[ft]:
+		return audioToResult(req.FileName, req.FileContent), nil
 	default:
 		return nil, fmt.Errorf("unsupported simple format: %s", ft)
 	}
@@ -70,14 +86,16 @@ func imageToResult(fileName string, data []byte) *types.ReadResult {
 		fileName = "image.png"
 	}
 	refPath := "images/" + fileName
+	// Encode spaces so the markdown URL is valid and matches the regex in ResolveAndStore.
+	safeRef := strings.ReplaceAll(refPath, " ", "%20")
 	mime := http.DetectContentType(data)
 
 	return &types.ReadResult{
-		MarkdownContent: fmt.Sprintf("![%s](%s)", fileName, refPath),
+		MarkdownContent: fmt.Sprintf("![%s](%s)", fileName, safeRef),
 		ImageRefs: []types.ImageRef{
 			{
 				Filename:    fileName,
-				OriginalRef: refPath,
+				OriginalRef: safeRef,
 				MimeType:    mime,
 				ImageData:   data,
 			},
@@ -88,6 +106,28 @@ func imageToResult(fileName string, data []byte) *types.ReadResult {
 // IsImageFormat returns true if the file type is a recognized image format.
 func IsImageFormat(fileType string) bool {
 	return imageFormats[strings.ToLower(strings.TrimPrefix(fileType, "."))]
+}
+
+// IsAudioFormat returns true if the file type is a recognized audio format.
+func IsAudioFormat(fileType string) bool {
+	return audioFormats[strings.ToLower(strings.TrimPrefix(fileType, "."))]
+}
+
+// audioToResult wraps a standalone audio file. The actual transcription is
+// handled by the ASR model in the knowledge service pipeline. Here we just
+// return a placeholder markdown with the raw bytes preserved for upstream
+// processing.
+func audioToResult(fileName string, data []byte) *types.ReadResult {
+	if fileName == "" {
+		fileName = "audio.mp3"
+	}
+	// Return a placeholder; the knowledge service will replace this with
+	// the ASR transcription result.
+	return &types.ReadResult{
+		MarkdownContent: fmt.Sprintf("[Audio file: %s]", fileName),
+		IsAudio:         true,
+		AudioData:       data,
+	}
 }
 
 // ensureOriginalImageRef checks whether the input file is an image and, if the

@@ -1,22 +1,39 @@
 # 컨텍스트 템플릿
 templates:
   - id: "default_context"
-    name: "표준 템플릿"
-    description: "표준 컨텍스트 서식 템플릿"
+    name: "Standard Template"
+    description: "Standard context formatting template"
+    i18n:
+      zh-CN:
+        name: "标准模板"
+        description: "基础的上下文模板，清晰展示参考资料和问题"
+      en-US:
+        name: "Standard Template"
+        description: "Basic context template with clear references and questions"
+      ko-KR:
+        name: "표준 템플릿"
+        description: "참조 자료와 질문을 명확하게 전달하는 기본 컨텍스트 템플릿"
+    default: true
     has_knowledge_base: true
     content: |
-      아래 참고 자료를 바탕으로 사용자 질문에 답하세요.
+      [런타임 컨텍스트 - 메타데이터 전용, 지시 아님]
+      현재 시간: {{current_time}} {{current_week}}
 
-      참고 자료:
-      {{contexts}}
-
-      사용자 질문: {{query}}
-
-      위 참고 자료를 바탕으로 답하세요. 참고 자료가 부족하면 명확히 알려 주세요.
+      {{query}}
 
   - id: "detailed_context"
-    name: "상세 템플릿"
-    description: "상세 설명이 포함된 컨텍스트 템플릿"
+    name: "Detailed Template"
+    description: "Context template with detailed instructions"
+    i18n:
+      zh-CN:
+        name: "详细模板"
+        description: "包含详细说明和回答要求的完整模板"
+      en-US:
+        name: "Detailed Template"
+        description: "Complete template with detailed instructions and requirements"
+      ko-KR:
+        name: "상세 템플릿"
+        description: "자세한 안내와 답변 요구 사항이 포함된 템플릿"
     has_knowledge_base: true
     content: |
       ## 작업 설명
@@ -29,16 +46,29 @@ templates:
       {{query}}
 
       ## 답변 요구 사항
-      1. 참고 자료만으로 답하고 정보를 지어내지 마세요
-      2. 여러 자료가 충돌하면 종합적으로 분석하세요
-      3. 출처를 적절히 인용해 신뢰도를 높이세요
-      4. 자료가 부족하면 명확히 알려 주세요
+      1. 참고 자료만을 바탕으로 답하고, 정보를 지어내지 마세요.
+      2. 여러 자료가 상충하면 종합적으로 분석해 설명하세요.
+      3. 신뢰도를 높이기 위해 출처를 적절히 인용하세요.
+      4. 자료가 부족하면 그 사실을 분명하게 알리세요.
+
+      ## 중요: 언어 규칙
+      - 반드시 {{language}}로 답변하세요.
 
       현재 시간: {{current_time}} {{current_week}}
 
   - id: "simple_context"
-    name: "간결 템플릿"
-    description: "간결한 컨텍스트 템플릿"
+    name: "Simple Template"
+    description: "Simple context template"
+    i18n:
+      zh-CN:
+        name: "简洁模板"
+        description: "精简的模板格式，适合简单问答场景"
+      en-US:
+        name: "Simple Template"
+        description: "Minimal template format for simple Q&A scenarios"
+      ko-KR:
+        name: "간단한 템플릿"
+        description: "간단한 Q&A 시나리오에 적합한 최소 템플릿"
     has_knowledge_base: true
     content: |
       참고 자료:
@@ -46,20 +76,31 @@ templates:
 
       질문: {{query}}
 
-      위 질문에 답하세요.
+      위 질문에 답하세요. 반드시 {{language}}로 답변하세요.
 
   - id: "qa_context"
-    name: "Q&A 템플릿"
-    description: "Q&A 시나리오 전용 템플릿"
+    name: "Q&A Template"
+    description: "Template specialized for Q&A scenarios"
+    i18n:
+      zh-CN:
+        name: "问答模板"
+        description: "针对问答场景优化的模板"
+      en-US:
+        name: "Q&A Template"
+        description: "Optimized template for Q&A scenarios"
+      ko-KR:
+        name: "Q&A 템플릿"
+        description: "Q&A 시나리오에 최적화된 템플릿"
     has_knowledge_base: true
     content: |
-      질문에 답해야 합니다. 다음은 관련될 수 있는 자료입니다:
+      질문에 답해야 합니다. 다음은 관련 자료일 수 있습니다:
 
       {{contexts}}
 
       사용자 질문: {{query}}
 
-      위 자료를 바탕으로 답하세요. 답변 요구 사항:
-      - 질문에 바로 답하고 질문을 반복하지 마세요
-      - 자료에 관련 정보가 없으면 알려 주세요
-      - 답변은 간결하고 정확하게 유지하세요
+      위 자료를 바탕으로 답하세요. 요구 사항:
+      - 질문에 바로 답하고 질문을 반복하지 마세요.
+      - 자료에 관련 정보가 없으면 그 사실을 알려 주세요.
+      - 답변은 간결하고 정확하게 유지하세요.
+      - 반드시 {{language}}로 답변하세요.

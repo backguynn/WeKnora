@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // VLM defines the interface for Vision Language Model operations.
 type VLM interface {
-	// Predict sends an image with a text prompt to the VLM and returns the generated text.
-	Predict(ctx context.Context, imgBytes []byte, prompt string) (string, error)
+	// Predict sends one or more images with a text prompt to the VLM and returns the generated text.
+	Predict(ctx context.Context, imgBytes [][]byte, prompt string) (string, error)
 
 	GetModelName() string
 	GetModelID() string
@@ -26,15 +28,36 @@ type Config struct {
 	APIKey        string
 	ModelID       string
 	InterfaceType string // "ollama" or "openai" (default)
+	Provider      string
+	Extra         map[string]any
+	AppID         string
+	AppSecret     string
 }
 
 // NewVLM creates a VLM instance based on the provided configuration.
 func NewVLM(config *Config, ollamaService *ollama.OllamaService) (VLM, error) {
+	v, err := newVLM(config, ollamaService)
+	if err != nil || !logger.LLMDebugEnabled() {
+		return v, err
+	}
+	return &debugVLM{inner: v}, nil
+}
+
+func newVLM(config *Config, ollamaService *ollama.OllamaService) (VLM, error) {
 	ifType := strings.ToLower(config.InterfaceType)
 
 	if ifType == "ollama" || config.Source == types.ModelSourceLocal {
 		return NewOllamaVLM(config, ollamaService)
 	}
+
+	providerName := provider.ProviderName(config.Provider)
+	if providerName == "" {
+		providerName = provider.DetectProvider(config.BaseURL)
+	}
+	if providerName == provider.ProviderWeKnoraCloud {
+		return NewWeKnoraCloudVLM(config)
+	}
+
 	return NewRemoteAPIVLM(config)
 }
 

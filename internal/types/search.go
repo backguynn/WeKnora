@@ -120,6 +120,9 @@ type SearchResult struct {
 	// Used to indicate the source of the knowledge, such as "url"
 	KnowledgeSource string `json:"knowledge_source"`
 
+	// KnowledgeChannel indicates through which channel the knowledge was ingested (web, api, wechat, etc.)
+	KnowledgeChannel string `json:"knowledge_channel"`
+
 	// ChunkMetadata stores chunk-level metadata (e.g., generated questions)
 	ChunkMetadata JSON `json:"chunk_metadata,omitempty"`
 
@@ -127,21 +130,29 @@ type SearchResult struct {
 	// For FAQ: this is the matched question text (standard or similar question)
 	MatchedContent string `json:"matched_content,omitempty"`
 
+	// KnowledgeDescription is the description of the knowledge document
+	KnowledgeDescription string `json:"knowledge_description,omitempty"`
+
 	// KnowledgeBaseID is the ID of the knowledge base this result belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
 }
 
 // SearchParams represents the search parameters
 type SearchParams struct {
-	QueryText            string   `json:"query_text"`
-	VectorThreshold      float64  `json:"vector_threshold"`
-	KeywordThreshold     float64  `json:"keyword_threshold"`
-	MatchCount           int      `json:"match_count"`
-	DisableKeywordsMatch bool     `json:"disable_keywords_match"`
-	DisableVectorMatch   bool     `json:"disable_vector_match"`
-	KnowledgeIDs         []string `json:"knowledge_ids"`
-	TagIDs               []string `json:"tag_ids"` // Tag IDs for filtering (used for FAQ priority filtering)
-	OnlyRecommended      bool     `json:"only_recommended"`
+	QueryText            string    `json:"query_text"`
+	QueryEmbedding       []float32 `json:"query_embedding,omitempty"`
+	VectorThreshold      float64   `json:"vector_threshold"`
+	KeywordThreshold     float64   `json:"keyword_threshold"`
+	MatchCount           int       `json:"match_count"`
+	DisableKeywordsMatch bool      `json:"disable_keywords_match"`
+	DisableVectorMatch   bool      `json:"disable_vector_match"`
+	KnowledgeIDs         []string  `json:"knowledge_ids"`
+	TagIDs               []string  `json:"tag_ids"` // Tag IDs for filtering (used for FAQ priority filtering)
+	OnlyRecommended      bool      `json:"only_recommended"`
+	// KnowledgeBaseIDs overrides the single KB ID passed to HybridSearch,
+	// allowing a single retrieval call to span multiple KBs that share the
+	// same embedding model. When empty, HybridSearch uses its own id parameter.
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
 	// SkipContextEnrichment skips fetching parent, nearby, and relation chunks
 	// in processSearchResults. Used by the chat pipeline where context assembly
 	// is handled separately in the merge stage.
@@ -170,7 +181,7 @@ type Pagination struct {
 	// Page
 	Page int `form:"page"      json:"page"      binding:"omitempty,min=1"`
 	// Page size
-	PageSize int `form:"page_size" json:"page_size" binding:"omitempty,min=1,max=100"`
+	PageSize int `form:"page_size" json:"page_size" binding:"omitempty,min=1,max=1000"`
 }
 
 // GetPage gets the page number, default is 1
@@ -186,8 +197,8 @@ func (p *Pagination) GetPageSize() int {
 	if p.PageSize < 1 {
 		return 20
 	}
-	if p.PageSize > 100 {
-		return 100
+	if p.PageSize > 1000 {
+		return 1000
 	}
 	return p.PageSize
 }

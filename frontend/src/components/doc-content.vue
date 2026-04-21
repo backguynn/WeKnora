@@ -1,13 +1,13 @@
-// @ts-nocheck
 <script setup lang="ts">
 import { marked } from "marked";
+
 import hljs from "highlight.js";
 import "highlight.js/styles/github.css";
 import mermaid from "mermaid";
-import { onMounted, ref, nextTick, onUnmounted, watch } from "vue";
-import { downKnowledgeDetails, deleteGeneratedQuestion, getChunkByIdOnly } from "@/api/knowledge-base/index";
+import { onMounted, ref, nextTick, onUnmounted, watch, computed } from "vue";
+import { downKnowledgeDetails, deleteGeneratedQuestion, getChunkByIdOnly, previewKnowledgeFile } from "@/api/knowledge-base/index";
 import { MessagePlugin, DialogPlugin } from "tdesign-vue-next";
-import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
+import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages, isValidURL } from '@/utils/security';
 import { openMermaidFullscreen } from '@/utils/mermaidViewer';
 import { useI18n } from 'vue-i18n';
 import DocumentPreview from '@/components/document-preview.vue';
@@ -49,8 +49,6 @@ const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo"])
 const emit = defineEmits(["closeDoc", "getDoc", "questionDeleted"]);
 
 marked.use({
-  mangle: false,
-  headerIds: false,
   breaks: true,      // 启用单行换行转 <br>
   gfm: true,         // 启用 GitHub Flavored Markdown
 });
@@ -59,16 +57,15 @@ let page = 1;
 let loadingChunks = false;
 let pendingRequestedPage: number | null = null;
 let pendingChunksBeforeLoad = 0;
-let doc = null;
-let down = ref()
-let mdContentWrap = ref()
-let url = ref('')
+let doc: HTMLElement | null = null;
+const down = ref<HTMLAnchorElement | null>(null)
+const mdContentWrap = ref<HTMLElement | null>(null)
+const url = ref('')
 // 视图模式：chunks / merged / preview
 // file 类型默认「预览」，URL / 手动创建 默认「全文」
 const viewMode = ref<'chunks' | 'merged' | 'preview'>('merged');
 
-// 合并后的文档内容
-const mergedContent = ref<string>('');
+// 合并后的文档内容（在下方通过 computed 定义）
 
 /**
  * 根据 start_at 和 end_at 字段合并有 overlap 的 chunks
@@ -137,8 +134,11 @@ const mergeChunks = (chunks: any[]): string => {
 
 onMounted(() => {
   nextTick(() => {
-    doc = document.getElementsByClassName('t-drawer__body')[0]
-    doc.addEventListener('scroll', handleDetailsScroll);
+    const drawers = document.getElementsByClassName('t-drawer__body');
+    if (drawers && drawers.length > 0) {
+      doc = drawers[0] as HTMLElement;
+      doc?.addEventListener('scroll', handleDetailsScroll);
+    }
   })
 })
 watch(() => props.details?.id, () => {
@@ -163,9 +163,11 @@ watch(() => props.details?.chunkLoading, (val) => {
   }
 });
 onUnmounted(() => {
-  doc.removeEventListener('scroll', handleDetailsScroll);
+  if (doc) {
+    doc.removeEventListener('scroll', handleDetailsScroll);
+  }
 })
-const checkImage = (url) => {
+const checkImage = (url: string): Promise<boolean> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(true);
@@ -173,13 +175,11 @@ const checkImage = (url) => {
     img.src = url;
   });
 };
-renderer.image = function (href, title, text) {
-  // 安全地处理图片链接
+renderer.image = function ({href, title, text}) {
   if (!isValidImageURL(href)) {
     return `<p>${t('error.invalidImageLink')}</p>`;
   }
-  
-  // 使用安全的图片创建函数
+
   const safeImage = createSafeImage(href, text || '', title || '');
   return `<figure>
                 ${safeImage}
@@ -188,28 +188,31 @@ renderer.image = function (href, title, text) {
 };
 
 // 自定义代码块渲染器，只显示语言标签
-renderer.code = function (code, infostring) {
-  const lang = (infostring || '').trim();
+renderer.code = function ({text, lang}) {
+  // 空值校验：防止 text 为 undefined 或 null
+  if (!text || typeof text !== 'string') {
+    text = '';
+  }
 
   // Mermaid 图表处理
   if (lang === 'mermaid') {
     // 生成唯一ID
     const id = `mermaid-${++mermaidRenderCount}`;
     // 返回带有 mermaid 类的 div，后续由 mermaid.run() 处理
-    return `<div class="mermaid" id="${id}">${code}</div>`;
+    return `<div class="mermaid" id="${id}">${text}</div>`;
   }
 
   let detectedLang = lang;
   let highlighted = '';
   if (lang && hljs.getLanguage(lang)) {
     try {
-      highlighted = hljs.highlight(code, { language: lang }).value;
+      highlighted = hljs.highlight(text, { language: lang }).value;
     } catch (e) {
-      highlighted = hljs.highlightAuto(code).value;
-      detectedLang = hljs.highlightAuto(code).language || lang;
+      highlighted = hljs.highlightAuto(text).value;
+      detectedLang = hljs.highlightAuto(text).language || lang;
     }
   } else {
-    const auto = hljs.highlightAuto(code);
+    const auto = hljs.highlightAuto(text);
     highlighted = auto.value;
     detectedLang = auto.language || lang;
   }
@@ -223,14 +226,28 @@ renderer.code = function (code, infostring) {
     </div>
   `;
 };
-// 监听 chunks 变化，自动更新合并内容
-watch(() => props.details?.md, (newChunks) => {
+// 监听 chunks 变化，自动更新合并内容（已改为 computed 属性）
+const mergedContent = computed(() => {
+  const newChunks = props.details?.md;
   if (newChunks && newChunks.length > 0) {
-    mergedContent.value = mergeChunks(newChunks);
-  } else {
-    mergedContent.value = '';
+    return mergeChunks(newChunks);
   }
-}, { immediate: true, deep: true });
+  return '';
+});
+
+// 计算处理后的分块数据，避免在模板中频繁调用方法和 JSON.parse
+const processedChunks = computed(() => {
+  return (props.details?.md || []).map((item: any, index: number) => {
+    return {
+      original: item,
+      processedContent: processMarkdown(item.content),
+      questions: getGeneratedQuestions(item),
+      meta: getChunkMeta(item),
+      hasParent: hasParentChunk(item),
+      chunkClass: getChunkClass(index)
+    };
+  });
+});
 
 const previewSupportedTypes = new Set([
   'pdf', 'docx', 'pptx', 'ppt', 'xlsx', 'xls', 'csv',
@@ -239,18 +256,29 @@ const previewSupportedTypes = new Set([
   'py', 'java', 'go', 'cpp', 'c', 'h', 'sh', 'yaml', 'yml',
   'ini', 'conf', 'log', 'sql', 'rs', 'rb', 'php', 'swift', 'kt',
   'scala', 'r', 'lua', 'pl', 'toml',
+  'mp3', 'wav', 'm4a', 'flac', 'ogg',
 ]);
 
 const canPreview = (): boolean => {
   if (props.details?.type !== 'file') return false;
   const ft = props.details?.file_type?.toLowerCase();
-  return !!ft && previewSupportedTypes.has(ft);
+  if (!ft) return false;
+  if (audioExtensions.has(ft)) return false; // 音频不走预览tab，播放器已内嵌
+  return previewSupportedTypes.has(ft);
 };
 
-// 当文档详情加载完成时，file 类型自动切换到「预览」
+// 当文档详情加载完成时，file 类型自动切换到「预览」；音频类型使用 merged + 播放器
 watch(() => props.details?.id, (newId) => {
+  // 清理旧音频
+  if (audioBlobUrl.value) {
+    URL.revokeObjectURL(audioBlobUrl.value);
+    audioBlobUrl.value = '';
+  }
   if (!newId) return;
-  if (props.details?.type === 'file' && canPreview()) {
+  if (isAudioFile(props.details?.file_type)) {
+    viewMode.value = 'merged'; // 音频默认全文视图，播放器已内嵌
+    loadAudioPreview();
+  } else if (props.details?.type === 'file' && canPreview()) {
     viewMode.value = 'preview';
   } else {
     viewMode.value = 'merged';
@@ -267,9 +295,32 @@ const isMarkdownFile = (fileType?: string): boolean => {
   const markdownTypes = ['md', 'markdown'];
   return markdownTypes.includes(fileType.toLowerCase());
 };
+
+// 音频文件判断与播放器状态
+const audioExtensions = new Set(['mp3', 'wav', 'm4a', 'flac', 'ogg']);
+const isAudioFile = (fileType?: string): boolean => {
+  if (!fileType) return false;
+  return audioExtensions.has(fileType.toLowerCase());
+};
+const audioBlobUrl = ref('');
+const audioLoading = ref(false);
+
+const loadAudioPreview = async () => {
+  if (!props.details?.id || audioBlobUrl.value) return;
+  audioLoading.value = true;
+  try {
+    const blob = await previewKnowledgeFile(props.details.id);
+    audioBlobUrl.value = URL.createObjectURL(blob);
+  } catch (err) {
+    console.error('Audio preview load failed:', err);
+  } finally {
+    audioLoading.value = false;
+  }
+};
 const runMarkdownPostRenderPipeline = async () => {
   await nextTick();
-  const renderRoot = mdContentWrap.value as ParentNode;
+  const renderRoot = mdContentWrap.value;
+  if (!renderRoot) return;
   await hydrateProtectedFileImages(renderRoot);
   const images = renderRoot?.querySelectorAll?.('img.markdown-image') as NodeListOf<HTMLImageElement> | undefined;
   if (images) {
@@ -303,7 +354,7 @@ watch(() => props.visible, (visible) => {
 // 渲染 Mermaid 图表的函数
 const renderMermaidDiagrams = async () => {
   try {
-    const mermaidElements = mdContentWrap.value?.querySelectorAll('.mermaid');
+    const mermaidElements = mdContentWrap.value?.querySelectorAll<HTMLElement>('.mermaid');
     console.log('[Mermaid] Found mermaid elements:', mermaidElements?.length);
     if (mermaidElements && mermaidElements.length > 0) {
       await mermaid.run({
@@ -339,7 +390,7 @@ const bindMermaidClickEvents = () => {
   // 绑定在 .mermaid div 上，而不是 SVG 上
   const mermaidDivs = mdContentWrap.value.querySelectorAll('.mermaid');
   console.log('[Mermaid] Found mermaid divs:', mermaidDivs.length);
-  mermaidDivs.forEach((div, index) => {
+  mermaidDivs.forEach((div: Element, index: number) => {
     const divEl = div as HTMLElement;
     divEl.style.cursor = 'pointer';
     // 移除旧的事件监听器（避免重复绑定）
@@ -350,11 +401,14 @@ const bindMermaidClickEvents = () => {
 };
 
 // 安全地处理 Markdown 内容（使用 marked）
-const processMarkdown = (markdownText) => {
+const processMarkdown = (markdownText: string): string => {
   if (!markdownText || typeof markdownText !== 'string') return '';
 
+  // 去除 Markdown 头部的 YAML Frontmatter（例如 --- title: xxx ---）
+  let processedText = markdownText.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+
   // 先还原原始文本中的 HTML 实体，让它们作为普通字符参与渲染
-  let processedText = markdownText
+  processedText = processedText
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/gi, "'")
     .replace(/&apos;/g, "'")
@@ -375,19 +429,19 @@ const processMarkdown = (markdownText) => {
 
   // 使用标记渲染
   marked.use({ renderer });
-  let html = marked.parse(safeMarkdown);
+  const html = marked.parse(safeMarkdown) as string;
 
   // 还原被转义的 <br>
-  html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+  const normalizedHtml = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
 
   // 最终安全清理
-  let result = sanitizeHTML(html);
+  const result = sanitizeHTML(normalizedHtml);
   
   return result;
 };
 const handleClose = () => {
   emit("closeDoc", false);
-  doc.scrollTop = 0;
+  if (doc) doc.scrollTop = 0;
   viewMode.value = 'merged';
 };
 
@@ -401,6 +455,23 @@ const getDisplayTitle = () => {
   }
   // URL和手动创建直接返回标题
   return props.details.title;
+};
+
+const channelLabelMap: Record<string, string> = {
+  web: 'knowledgeBase.channelWeb',
+  api: 'knowledgeBase.channelApi',
+  browser_extension: 'knowledgeBase.channelBrowserExtension',
+  wechat: 'knowledgeBase.channelWechat',
+  wecom: 'knowledgeBase.channelWecom',
+  feishu: 'knowledgeBase.channelFeishu',
+  dingtalk: 'knowledgeBase.channelDingtalk',
+  slack: 'knowledgeBase.channelSlack',
+  im: 'knowledgeBase.channelIm',
+};
+
+const getChannelLabel = (channel: string) => {
+  const key = channelLabelMap[channel];
+  return key ? t(key) : t('knowledgeBase.channelUnknown');
 };
 
 // 获取类型标签
@@ -461,6 +532,8 @@ const getTimeLabel = () => {
 const getChunkClass = (index: number) => {
   return index % 2 !== 0 ? 'chunk-odd' : 'chunk-even';
 };
+
+const toNumericIndex = (index: string | number): number => Number(index);
 
 // 获取Chunk元数据
 const getChunkMeta = (item: any) => {
@@ -616,6 +689,24 @@ const getParentContent = (item: any) => {
   return parentContextCache.value.get(item.parent_chunk_id) || '';
 };
 
+const summaryExpanded = ref(false);
+const summaryRef = ref<HTMLElement | null>(null);
+const summaryOverflow = ref(false);
+
+const checkSummaryOverflow = () => {
+  nextTick(() => {
+    const el = summaryRef.value;
+    if (!el) { summaryOverflow.value = false; return; }
+    summaryOverflow.value = el.scrollHeight > el.clientHeight + 1;
+  });
+};
+
+watch(() => props.details?.description, () => {
+  summaryExpanded.value = false;
+  checkSummaryOverflow();
+});
+watch(summaryRef, () => checkSummaryOverflow());
+
 const downloadFile = () => {
   downKnowledgeDetails(props.details.id)
     .then((result) => {
@@ -627,7 +718,10 @@ const downloadFile = () => {
         const link = document.createElement("a");
         link.style.display = "none";
         link.setAttribute("href", url.value);
-        link.setAttribute("download", props.details.title);
+        const needsExt = props.details.type === 'manual' && !props.details.title.toLowerCase().endsWith('.md');
+        const ext = needsExt ? '.md' : '';
+        link.setAttribute("download", props.details.title + ext);
+        document.body.appendChild(link);
         link.click();
         nextTick(() => {
           document.body.removeChild(link);
@@ -657,7 +751,7 @@ const handleDetailsScroll = () => {
 </script>
 <template>
   <div class="doc_content" ref="mdContentWrap">
-    <t-drawer :visible="visible" :zIndex="2000" :closeBtn="true" @close="handleClose">
+    <t-drawer :visible="visible" :zIndex="2000" :closeBtn="true" :footer="false" @close="handleClose">
       <template #header>
         <div class="drawer-header">
           <span class="header-title">{{ getDisplayTitle() }}</span>
@@ -673,7 +767,7 @@ const handleDetailsScroll = () => {
         <span class="label">{{ $t('knowledgeBase.fileName') }}</span>
         <div class="download_box">
           <span class="doc_t">{{ details.title }}</span>
-          <div class="icon_box" @click="downloadFile()">
+          <div class="icon_box" @click="downloadFile()" aria-label="Download">
             <img class="download_box" src="@/assets/img/download.svg" alt="">
           </div>
         </div>
@@ -683,7 +777,7 @@ const handleDetailsScroll = () => {
       <div v-else-if="details.type === 'url'" class="url_box">
         <span class="label">{{ $t('knowledgeBase.urlSource') }}</span>
         <div class="url_link_box">
-          <a :href="details.source" target="_blank" class="url_link">
+          <a :href="isValidURL(details.source) ? details.source : 'javascript:void(0)'" :target="isValidURL(details.source) ? '_blank' : undefined" class="url_link">
             <t-icon name="link" size="14px" />
             <span class="url_text">{{ details.source }}</span>
             <t-icon name="jump" size="14px" class="jump-icon" />
@@ -694,11 +788,34 @@ const handleDetailsScroll = () => {
       <!-- 手动创建类型专属区域 -->
       <div v-else-if="details.type === 'manual'" class="manual_box">
         <span class="label">{{ $t('knowledgeBase.documentTitle') }}</span>
-        <div class="manual_title_box">
-          <span class="manual_title">{{ details.title }}</span>
+        <div class="download_box">
+          <div class="manual_title_box">
+            <span class="manual_title">{{ details.title }}</span>
+          </div>
+          <div class="icon_box" @click="downloadFile()" aria-label="Download">
+            <img class="download_box" src="@/assets/img/download.svg" alt="">
+          </div>
         </div>
       </div>
       
+      <!-- 文档摘要 -->
+      <div v-if="details.description" class="summary_box">
+        <span class="label">{{ $t('knowledgeBase.documentSummary') }}</span>
+        <div class="summary_wrapper" :class="{ 'summary_clickable': summaryOverflow || summaryExpanded }" @click="(summaryOverflow || summaryExpanded) && (summaryExpanded = !summaryExpanded)">
+          <div ref="summaryRef" :class="['summary_content', { 'summary_collapsed': !summaryExpanded }]">{{ details.description }}</div>
+          <div v-if="(summaryOverflow && !summaryExpanded) || summaryExpanded" class="summary_fade" :class="{ 'summary_fade_expanded': summaryExpanded }">
+            <t-icon :name="summaryExpanded ? 'chevron-up' : 'chevron-down'" size="14px" class="summary_fade_icon" />
+          </div>
+        </div>
+      </div>
+      <div v-else-if="details.summary_status === 'pending' || details.summary_status === 'processing'" class="summary_box">
+        <span class="label">{{ $t('knowledgeBase.documentSummary') }}</span>
+        <div class="summary_loading">
+          <t-loading size="small" />
+          <span>{{ $t('knowledgeBase.generatingSummary') }}</span>
+        </div>
+      </div>
+
       <div class="content_header">
         <div class="header-left">
           <div class="title-row">
@@ -708,7 +825,12 @@ const handleDetailsScroll = () => {
             </span>
           </div>
           <div class="meta-row">
-            <span class="time"> {{ getTimeLabel() }}：{{ details.time }} </span>
+            <div class="meta-left">
+              <span class="time"> {{ getTimeLabel() }}：{{ details.time }} </span>
+              <t-tag v-if="details.channel && details.channel !== 'web'" size="small" variant="light" theme="warning" class="channel-tag">
+                {{ getChannelLabel(details.channel) }}
+              </t-tag>
+            </div>
             <div class="view-mode-buttons">
               <t-button 
                 v-if="canPreview()"
@@ -743,7 +865,18 @@ const handleDetailsScroll = () => {
           </div>
         </div>
       </div>
-      
+
+      <!-- 音频播放器（音频文件时固定显示在内容区顶部） -->
+      <div v-if="isAudioFile(details.file_type)" class="audio-player-section">
+        <div v-if="audioLoading" class="audio-loading">
+          <t-loading size="small" />
+          <span>{{ $t('preview.audioLoading') }}</span>
+        </div>
+        <audio v-else-if="audioBlobUrl" controls class="audio-player" :src="audioBlobUrl">
+          {{ $t('preview.audioNotSupported') }}
+        </audio>
+      </div>
+
       <!-- 合并视图 -->
       <div v-if="viewMode === 'merged'">
         <div v-if="!mergedContent" class="no_content">{{ $t('common.noData') }}</div>
@@ -752,18 +885,17 @@ const handleDetailsScroll = () => {
       
       <!-- 分块视图 -->
       <div v-else-if="viewMode === 'chunks'">
-        <div v-if="details.md.length == 0" class="no_content">{{ $t('common.noData') }}</div>
+        <div v-if="!processedChunks.length" class="no_content">{{ $t('common.noData') }}</div>
         <div v-else class="chunk-list">
           <div class="chunk-item" 
-            v-for="(item, index) in details.md" 
+            v-for="(chunk, index) in processedChunks" 
             :key="index"
-            :class="getChunkClass(index)"
           >
             <div class="chunk-header">
-              <span class="chunk-index">{{ $t('knowledgeBase.segment') }} {{ index + 1 }}</span>
+              <span class="chunk-index">{{ $t('knowledgeBase.segment') }} {{ toNumericIndex(index) + 1 }}</span>
               <div class="chunk-header-right">
                 <t-tag 
-                  v-if="hasParentChunk(item)" 
+                  v-if="chunk.hasParent" 
                   size="small" 
                   theme="primary" 
                   variant="light"
@@ -771,39 +903,39 @@ const handleDetailsScroll = () => {
                   {{ $t('knowledgeBase.childChunk') }}
                 </t-tag>
                 <t-tag 
-                  v-if="getGeneratedQuestions(item).length > 0" 
+                  v-if="chunk.questions.length > 0" 
                   size="small" 
                   theme="success" 
                   variant="light"
                 >
-                  {{ $t('knowledgeBase.questions') }} {{ getGeneratedQuestions(item).length }}
+                  {{ $t('knowledgeBase.questions') }} {{ chunk.questions.length }}
                 </t-tag>
-                <span class="chunk-meta">{{ getChunkMeta(item) }}</span>
+                <span class="chunk-meta">{{ chunk.meta }}</span>
               </div>
             </div>
-            <div class="md-content" v-html="processMarkdown(item.content)"></div>
+            <div class="md-content" v-html="chunk.processedContent"></div>
             
             <!-- 父 Chunk 上下文展开 -->
-            <div v-if="hasParentChunk(item)" class="parent-context-section">
-              <div class="parent-context-toggle" @click="toggleParentContext(item, index)">
-                <t-icon v-if="!parentContextLoading.has(index)" :name="isParentExpanded(index) ? 'chevron-down' : 'chevron-right'" size="14px" />
+            <div v-if="chunk.hasParent" class="parent-context-section">
+              <div class="parent-context-toggle" @click="toggleParentContext(chunk.original, toNumericIndex(index))">
+                <t-icon v-if="!parentContextLoading.has(toNumericIndex(index))" :name="isParentExpanded(toNumericIndex(index)) ? 'chevron-down' : 'chevron-right'" size="14px" />
                 <t-loading v-else size="small" style="width: 14px; height: 14px;" />
                 <span>{{ $t('knowledgeBase.viewParentContext') }}</span>
               </div>
-              <div v-show="isParentExpanded(index)" class="parent-context-content">
-                <div class="md-content" v-html="processMarkdown(getParentContent(item))"></div>
+              <div v-show="isParentExpanded(toNumericIndex(index))" class="parent-context-content">
+                <div class="md-content" v-html="processMarkdown(getParentContent(chunk.original))"></div>
               </div>
             </div>
             
             <!-- 生成的问题展示 -->
-            <div v-if="getGeneratedQuestions(item).length > 0" class="questions-section">
-              <div class="questions-toggle" @click="toggleQuestions(index)">
-                <t-icon :name="isExpanded(index) ? 'chevron-down' : 'chevron-right'" size="14px" />
-                <span>{{ $t('knowledgeBase.generatedQuestions') }} ({{ getGeneratedQuestions(item).length }})</span>
+            <div v-if="chunk.questions.length > 0" class="questions-section">
+              <div class="questions-toggle" @click="toggleQuestions(toNumericIndex(index))">
+                <t-icon :name="isExpanded(toNumericIndex(index)) ? 'chevron-down' : 'chevron-right'" size="14px" />
+                <span>{{ $t('knowledgeBase.generatedQuestions') }} ({{ chunk.questions.length }})</span>
               </div>
-              <div v-show="isExpanded(index)" class="questions-list">
+              <div v-show="isExpanded(toNumericIndex(index))" class="questions-list">
                 <div 
-                  v-for="question in getGeneratedQuestions(item)" 
+                  v-for="question in chunk.questions" 
                   :key="question.id" 
                   class="question-item"
                 >
@@ -814,8 +946,8 @@ const handleDetailsScroll = () => {
                     variant="text" 
                     size="small"
                     class="delete-question-btn"
-                    :loading="isDeleting(index, question.id)"
-                    @click.stop="handleDeleteQuestion(item, index, question)"
+                    :loading="isDeleting(toNumericIndex(index), question.id)"
+                    @click.stop="handleDeleteQuestion(chunk.original, toNumericIndex(index), question)"
                   >
                     <template #icon>
                       <t-icon name="delete" size="14px" />
@@ -838,10 +970,6 @@ const handleDetailsScroll = () => {
         />
       </div>
       
-      <template #footer>
-        <t-button @click="handleClose">{{ $t('common.confirm') }}</t-button>
-        <t-button theme="default" @click="handleClose">{{ $t('common.cancel') }}</t-button>
-      </template>
     </t-drawer>
   </div>
 </template>
@@ -849,7 +977,16 @@ const handleDetailsScroll = () => {
 @import "./css/markdown.less";
 
 :deep(.t-drawer .t-drawer__content-wrapper) {
-  width: 654px !important;
+  width: min(654px, 85vw) !important; // 减少到85%视口宽度，给左侧留更多空间
+  max-width: 654px !important;
+}
+
+// 在小屏幕上进一步调整
+@media (max-width: 768px) {
+  :deep(.t-drawer .t-drawer__content-wrapper) {
+    width: 90vw !important; // 小屏幕上使用90%宽度
+    max-width: none !important;
+  }
 }
 
 // 代码块样式
@@ -891,38 +1028,115 @@ const handleDetailsScroll = () => {
 }
 
 :deep(.t-drawer__header) {
-  font-weight: 800;
+  font-weight: normal;
 }
 
 :deep(.t-drawer__body.narrow-scrollbar) {
-  padding: 16px 24px;
+  padding: 16px 20px;
 }
 
 .drawer-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   
   .header-title {
     flex: 1;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
 
-.doc_box, .url_box, .manual_box {
+// 信息面板通用样式
+.info_panel {
   display: flex;
   flex-direction: column;
   margin-bottom: 16px;
+}
+
+.doc_box, .url_box, .manual_box {
+  .info_panel();
+}
+
+// 文档摘要区域
+.summary_box {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 24px;
+  margin-top: 8px;
+
+  .label {
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .summary_wrapper {
+    position: relative;
+    background: var(--td-bg-color-container-hover);
+    border-radius: 4px;
+
+    &.summary_clickable {
+      cursor: pointer;
+    }
+  }
+
+  .summary_content {
+    padding: 12px;
+    color: var(--td-text-color-primary);
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-wrap;
+
+    &.summary_collapsed {
+      max-height: 4.5em;
+      overflow: hidden;
+    }
+  }
+
+  .summary_fade {
+    display: flex;
+    justify-content: center;
+    padding-bottom: 4px;
+    pointer-events: none;
+
+    &:not(.summary_fade_expanded) {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 28px;
+      background: linear-gradient(transparent, var(--td-bg-color-container-hover) 80%);
+      border-radius: 0 0 4px 4px;
+      align-items: flex-end;
+    }
+  }
+
+  .summary_fade_icon {
+    color: var(--td-text-color-placeholder);
+  }
+
+  .summary_loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--td-bg-color-container-hover);
+    border-radius: 4px;
+    color: var(--td-text-color-placeholder);
+    font-size: 13px;
+  }
 }
 
 .label {
   color: var(--td-text-color-primary);
   font-size: 14px;
   font-style: normal;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 22px;
   margin-bottom: 8px;
 }
@@ -931,61 +1145,46 @@ const handleDetailsScroll = () => {
 .download_box {
   display: flex;
   align-items: center;
+  background: var(--td-bg-color-container-hover);
+  border-radius: 4px;
+  padding: 6px 10px;
 }
 
 .doc_t {
-  box-sizing: border-box;
   display: flex;
-  padding: 5px 8px;
   align-items: center;
-  border-radius: 3px;
-  border: 1px solid var(--td-component-border);
-  background: var(--td-bg-color-container-hover);
   word-break: break-all;
-  text-align: justify;
+  font-size: 13px;
+  color: var(--td-text-color-primary);
+  flex: 1;
 }
 
 .icon_box {
-  margin-left: 18px;
+  margin-left: 12px;
   display: flex;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
   color: var(--td-brand-color);
+  cursor: pointer;
 
-  .download_box {
+  img.download_box {
     width: 16px;
     height: 16px;
-    fill: currentColor;
-    overflow: hidden;
-    cursor: pointer;
   }
 }
 
 // URL链接区域
 .url_link_box {
   border-radius: 4px;
-  border: 1px solid var(--td-success-color-focus);
-  background: var(--td-success-color-light);
+  background: var(--td-bg-color-container-hover);
   padding: 8px 12px;
   
   .url_link {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--td-brand-color-active);
+    color: var(--td-brand-color);
     text-decoration: none;
-    transition: all 0.2s ease;
-    
-    &:hover {
-      color: var(--td-brand-color);
-      background: var(--td-success-color-light);
-      border-radius: 3px;
-      padding: 4px 6px;
-      margin: -4px -6px;
-      
-      .jump-icon {
-        transform: translateX(2px);
-      }
-    }
     
     .url_text {
       flex: 1;
@@ -994,61 +1193,80 @@ const handleDetailsScroll = () => {
     }
     
     .jump-icon {
-      transition: transform 0.2s ease;
       flex-shrink: 0;
-      color: var(--td-brand-color-active);
+      color: var(--td-brand-color);
     }
   }
 }
 
 // 手动创建标题区域
 .manual_title_box {
-  border-radius: 4px;
-  border: 1px solid var(--td-component-border);
-  background: var(--td-success-color-light);
-  padding: 8px 12px;
+  flex: 1;
+  display: flex;
+  align-items: center;
   
   .manual_title {
     color: var(--td-text-color-primary);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13px;
     word-break: break-word;
   }
 }
 
 .content_header {
-  margin-top: 22px;
+  margin-top: 16px;
   margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--td-component-stroke);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 12px;
 
   .header-left {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    width: 100%;
   }
 
   .title-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    
+    .label {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--td-text-color-primary);
+    }
   }
 
   .meta-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  
+  .meta-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
+  .channel-tag {
+    flex-shrink: 0;
+  }
+
   .chunk-count {
-    color: var(--td-brand-color);
+    color: var(--td-text-color-secondary);
     font-size: 12px;
-    background: var(--td-brand-color)14;
-    padding: 4px 8px;
-    border-radius: 12px;
+    background: var(--td-bg-color-container-hover);
+    padding: 2px 8px;
+    border-radius: 4px;
   }
 
   .view-mode-buttons {
@@ -1060,26 +1278,20 @@ const handleDetailsScroll = () => {
       min-width: 60px;
     }
   }
-
-  .view-mode-toggle {
-    height: 28px;
-  }
 }
 
 .time {
-  color: var(--td-text-color-disabled);
+  color: var(--td-text-color-secondary);
   font-size: 12px;
   font-style: normal;
   font-weight: 400;
-  line-height: 20px;
 }
 
 .no_content {
   margin-top: 12px;
   color: var(--td-text-color-disabled);
-  font-size: 12px;
+  font-size: 13px;
   padding: 16px;
-  background: var(--td-bg-color-container);
   text-align: center;
 }
 
@@ -1091,23 +1303,10 @@ const handleDetailsScroll = () => {
 }
 
 .chunk-item {
-  border-radius: 6px;
-  padding: 12px;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-  
-  &.chunk-even {
-    background: var(--td-bg-color-container-hover);
-  }
-  
-  &.chunk-odd {
-    background: var(--td-brand-color)0d;
-  }
-  
-  &:hover {
-    border-color: var(--td-brand-color);
-    box-shadow: 0 2px 8px rgba(7, 192, 95, 0.1);
-  }
+  border-radius: 4px;
+  padding: 12px 16px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
 }
 
 .chunk-header {
@@ -1153,11 +1352,6 @@ const handleDetailsScroll = () => {
   font-size: 12px;
   font-weight: 500;
   padding: 4px 0;
-  transition: color 0.2s ease;
-  
-  &:hover {
-    color: var(--td-brand-color);
-  }
 }
 
 .parent-context-content {
@@ -1189,11 +1383,6 @@ const handleDetailsScroll = () => {
   font-size: 12px;
   font-weight: 500;
   padding: 4px 0;
-  transition: color 0.2s ease;
-  
-  &:hover {
-    color: var(--td-brand-color);
-  }
 }
 
 .questions-list {
@@ -1212,11 +1401,8 @@ const handleDetailsScroll = () => {
   font-size: 13px;
   color: var(--td-text-color-primary);
   line-height: 1.5;
-  transition: background-color 0.2s ease;
   
   &:hover {
-    background: var(--td-success-color-light);
-    
     .delete-question-btn {
       opacity: 1;
     }
@@ -1237,11 +1423,33 @@ const handleDetailsScroll = () => {
     opacity: 0;
     flex-shrink: 0;
     color: var(--td-text-color-placeholder);
-    transition: opacity 0.2s ease, color 0.2s ease;
     
     &:hover {
       color: var(--td-error-color);
     }
+  }
+}
+
+// 音频播放器样式
+.audio-player-section {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--td-bg-color-container-hover);
+  border-radius: 6px;
+  border: 1px solid var(--td-component-border);
+
+  .audio-player {
+    width: 100%;
+    height: 40px;
+  }
+
+  .audio-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--td-text-color-placeholder);
+    font-size: 13px;
+    padding: 4px 0;
   }
 }
 

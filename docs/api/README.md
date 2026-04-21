@@ -79,3 +79,4 @@ WeKnora API는 기능별로 다음과 같이 분류됩니다:
 | 조직 관리 | 조직, 멤버, 지식베이스/에이전트 공유 | [organization.md](./organization.md) |
 | Skills | 사전 설치된 에이전트 스킬 | [skill.md](./skill.md) |
 | 웹 검색 | 웹 검색 서비스 제공업체 | [web-search.md](./web-search.md) |
+| 벡터 스토리지 | 벡터 데이터베이스 연결 관리 | [vector-store.md](./vector-store.md) |

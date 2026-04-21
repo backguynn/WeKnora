@@ -1,6 +1,7 @@
 <template>
   <div class="kb-list-container">
     <ListSpaceSidebar
+      v-if="!authStore.isLiteMode"
       v-model="spaceSelection"
       :count-all="allKnowledgeBases"
       :count-mine="kbs.length"
@@ -8,23 +9,24 @@
       :count-by-org="effectiveSharedCountByOrg"
     />
     <div class="kb-list-content">
-      <div class="header">
-        <div class="header-title">
-          <div class="title-row">
-            <h2>{{ $t('knowledgeBase.title') }}</h2>
+      <div class="header" style="--wails-draggable: drag">
+        <div class="header-title" style="--wails-draggable: drag">
+          <div class="title-row" style="--wails-draggable: drag">
+            <h2 style="--wails-draggable: drag">{{ $t('knowledgeBase.title') }}</h2>
             <t-tooltip :content="$t('knowledgeList.create')" placement="bottom">
               <t-button
                 variant="text"
                 theme="default"
                 size="small"
                 class="header-action-btn"
+                style="--wails-draggable: no-drag"
                 @click="handleCreateKnowledgeBase"
               >
                 <template #icon><t-icon name="folder-add" size="16px" /></template>
               </t-button>
             </t-tooltip>
           </div>
-          <p class="header-subtitle">{{ $t('knowledgeList.subtitle') }}</p>
+          <p class="header-subtitle" style="--wails-draggable: drag">{{ $t('knowledgeList.subtitle') }}</p>
         </div>
       </div>
       <div class="kb-list-main">
@@ -72,6 +74,21 @@
           <div class="progress-bar">
             <div class="progress-bar-inner" :style="{ width: summary.progress + '%' }"></div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 骨架屏占位 -->
+    <div v-if="loading && kbs.length === 0" class="kb-card-wrap">
+      <div v-for="n in 6" :key="'skel-'+n" class="kb-card kb-card-skeleton">
+        <div class="card-header">
+          <t-skeleton animation="gradient" :row-col="[{ width: '60%', height: '20px' }]" />
+        </div>
+        <div class="card-content">
+          <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '14px' }, { width: '80%', height: '14px' }]" />
+        </div>
+        <div class="card-bottom">
+          <t-skeleton animation="gradient" :row-col="[[{ width: '28px', height: '28px', type: 'rect' }, { width: '28px', height: '28px', type: 'rect' }]]" />
         </div>
       </div>
     </div>
@@ -168,7 +185,7 @@
                 </t-tooltip>
               </div>
             </div>
-            <div class="bottom-right">
+            <div v-if="!authStore.isLiteMode" class="bottom-right">
               <div class="personal-source">
                 <t-icon name="user" size="14px" />
                 <span>{{ $t('knowledgeList.myLabel') }}</span>
@@ -219,7 +236,7 @@
                     <t-icon name="relation" size="14px" />
                   </div>
                 </t-tooltip>
-                <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_config?.provider && kb.storage_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+                <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_provider_config?.provider && kb.storage_provider_config.provider !== 'local')" :content="$t('knowledgeList.features.multimodal')" placement="top">
                   <div class="feature-badge multimodal">
                     <t-icon name="image" size="14px" />
                   </div>
@@ -324,7 +341,7 @@
                   <t-icon name="relation" size="14px" />
                 </div>
               </t-tooltip>
-              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_config?.provider && kb.storage_config?.bucket_name)" :content="$t('knowledgeList.features.multimodal')" placement="top">
+              <t-tooltip v-if="kb.vlm_config?.enabled || (kb.storage_provider_config?.provider && kb.storage_provider_config.provider !== 'local')" :content="$t('knowledgeList.features.multimodal')" placement="top">
                 <div class="feature-badge multimodal">
                   <t-icon name="image" size="14px" />
                 </div>
@@ -342,7 +359,7 @@
               </t-tooltip>
             </div>
           </div>
-          <div class="bottom-right">
+          <div v-if="!authStore.isLiteMode" class="bottom-right">
             <div class="personal-source">
               <t-icon name="user" size="14px" />
               <span>{{ $t('knowledgeList.myLabel') }}</span>
@@ -605,6 +622,7 @@ import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { listKnowledgeBases, deleteKnowledgeBase, togglePinKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import { listOrganizationSharedKnowledgeBases, type SharedKnowledgeBase, type OrganizationSharedKnowledgeBaseItem, type SourceFromAgentInfo } from '@/api/organization'
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
@@ -615,6 +633,7 @@ import { useI18n } from 'vue-i18n'
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 const { t } = useI18n()
 
@@ -632,7 +651,8 @@ interface KB {
   showMore?: boolean;
   vlm_config?: { enabled?: boolean; model_id?: string };
   extract_config?: { enabled?: boolean };
-  storage_config?: { provider?: string; bucket_name?: string };
+  storage_provider_config?: { provider?: string };
+  storage_config?: { provider?: string; bucket_name?: string }; // legacy
   question_generation_config?: { enabled?: boolean; question_count?: number };
   knowledge_count?: number;
   chunk_count?: number;
@@ -1578,10 +1598,16 @@ const handleUploadFinishedEvent = (event: Event) => {
   transition: width 0.2s ease;
 }
 
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .kb-card-wrap {
   display: grid;
   gap: 20px;
   grid-template-columns: 1fr;
+  animation: contentFadeIn 0.32s ease-out;
 }
 
 .kb-card {
@@ -1599,6 +1625,13 @@ const handleUploadFinishedEvent = (event: Event) => {
   flex-direction: column;
   height: 160px;
   min-height: 160px;
+
+  &.kb-card-skeleton {
+    cursor: default;
+    .card-header { margin-bottom: 16px; }
+    .card-content { flex: 1; }
+    .card-bottom { margin-top: auto; }
+  }
 
   &:hover {
     border-color: var(--td-brand-color);
@@ -2160,66 +2193,7 @@ const handleUploadFinishedEvent = (event: Event) => {
 </style>
 
 <style lang="less">
-// 更多操作弹窗样式
-.card-more-popup {
-  z-index: 99 !important;
-
-  .t-popup__content {
-    padding: 6px 0 !important;
-    margin-top: 6px !important;
-    min-width: 140px;
-    border-radius: 6px !important;
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1) !important;
-    border: 1px solid var(--td-component-stroke) !important;
-  }
-}
-
-.popup-menu {
-  display: flex;
-  flex-direction: column;
-}
-
-.popup-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--td-text-color-primary);
-  font-family: "PingFang SC";
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-
-  .menu-icon {
-    font-size: 16px;
-    flex-shrink: 0;
-    color: var(--td-text-color-placeholder);
-    transition: color 0.2s ease;
-  }
-
-  &:hover {
-    background: var(--td-bg-color-container-hover);
-
-    .menu-icon {
-      color: var(--td-text-color-primary);
-    }
-  }
-
-  &.delete {
-    color: var(--td-text-color-primary);
-
-    &:hover {
-      background: var(--td-error-color-light);
-      color: var(--td-error-color);
-
-      .menu-icon {
-        color: var(--td-error-color);
-      }
-    }
-  }
-}
+/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
 
 // 共享知识库卡片：详情触发（替代三点，用「查看详情」链接样式）
 .shared-detail-trigger {

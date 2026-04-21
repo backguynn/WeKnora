@@ -8,17 +8,18 @@
       :count-joined="joinedCount"
     />
     <div class="org-list-content">
-      <div class="header">
-        <div class="header-title">
-          <div class="title-row">
-            <h2>{{ $t('organization.title') }}</h2>
-            <div class="header-actions">
+      <div class="header" style="--wails-draggable: drag">
+        <div class="header-title" style="--wails-draggable: drag">
+          <div class="title-row" style="--wails-draggable: drag">
+            <h2 style="--wails-draggable: drag">{{ $t('organization.title') }}</h2>
+            <div class="header-actions" style="--wails-draggable: no-drag">
               <t-tooltip :content="$t('organization.joinOrg')" placement="bottom">
                 <t-button
                   variant="text"
                   theme="default"
                   size="small"
                   class="header-action-btn"
+                  style="--wails-draggable: no-drag"
                   @click="handleJoinOrganization"
                 >
                   <template #icon><t-icon name="enter" size="16px" /></template>
@@ -30,6 +31,7 @@
                   theme="default"
                   size="small"
                   class="header-action-btn"
+                  style="--wails-draggable: no-drag"
                   @click="handleCreateOrganization"
                 >
                   <template #icon><img src="@/assets/img/organization-green.svg" class="org-create-icon" alt="" aria-hidden="true" /></template>
@@ -37,10 +39,25 @@
               </t-tooltip>
             </div>
           </div>
-          <p class="header-subtitle">{{ $t('organization.subtitle') }}</p>
+          <p class="header-subtitle" style="--wails-draggable: drag">{{ $t('organization.subtitle') }}</p>
         </div>
       </div>
       <div class="org-list-main">
+    <!-- 骨架屏占位 -->
+    <div v-if="loading && filteredOrganizations.length === 0" class="org-card-wrap">
+      <div v-for="n in 4" :key="'skel-'+n" class="org-card org-card-skeleton">
+        <div class="card-header">
+          <t-skeleton animation="gradient" :row-col="[[{ width: '36px', height: '36px', type: 'circle' }, { width: '50%', height: '20px' }]]" />
+        </div>
+        <div style="flex:1;margin-top:12px">
+          <t-skeleton animation="gradient" :row-col="[{ width: '100%', height: '14px' }, { width: '70%', height: '14px' }]" />
+        </div>
+        <div style="margin-top:auto">
+          <t-skeleton animation="gradient" :row-col="[[{ width: '60px', height: '22px', type: 'rect' }, { width: '60px', height: '22px', type: 'rect' }]]" />
+        </div>
+      </div>
+    </div>
+
     <!-- 卡片网格 -->
     <div v-if="filteredOrganizations.length > 0" class="org-card-wrap">
       <div
@@ -1404,10 +1421,24 @@ onUnmounted(() => {
   }
 }
 
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .org-card-wrap {
   display: grid;
   gap: 20px;
   grid-template-columns: 1fr;
+  animation: contentFadeIn 0.32s ease-out;
+}
+
+.org-card-skeleton {
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  height: 160px;
+  min-height: 160px;
 }
 
 /* 与知识库列表卡片统一尺寸：160px 高、18px 20px 内边距、12px 圆角 */
@@ -1903,66 +1934,7 @@ onUnmounted(() => {
 </style>
 
 <style lang="less">
-// 更多操作弹窗样式
-.card-more-popup {
-  z-index: 99 !important;
-
-  .t-popup__content {
-    padding: 6px 0 !important;
-    margin-top: 6px !important;
-    min-width: 140px;
-    border-radius: 6px !important;
-    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1) !important;
-    border: 1px solid var(--td-component-stroke) !important;
-  }
-}
-
-.popup-menu {
-  display: flex;
-  flex-direction: column;
-}
-
-.popup-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--td-text-color-primary);
-  font-family: "PingFang SC";
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-
-  .menu-icon {
-    font-size: 16px;
-    flex-shrink: 0;
-    color: var(--td-text-color-placeholder);
-    transition: color 0.2s ease;
-  }
-
-  &:hover {
-    background: var(--td-bg-color-container-hover);
-
-    .menu-icon {
-      color: var(--td-text-color-primary);
-    }
-  }
-
-  &.delete {
-    color: var(--td-text-color-primary);
-
-    &:hover {
-      background: var(--td-error-color-light);
-      color: var(--td-error-color);
-
-      .menu-icon {
-        color: var(--td-error-color);
-      }
-    }
-  }
-}
+/* 下拉菜单样式已统一至 @/assets/dropdown-menu.less */
 
 // 创建对话框样式优化
 .create-org-dialog,

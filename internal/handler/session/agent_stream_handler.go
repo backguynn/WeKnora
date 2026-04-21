@@ -232,13 +232,14 @@ func (h *AgentStreamHandler) handleReferences(ctx context.Context, evt event.Eve
 			} else if refMap, ok := ref.(map[string]interface{}); ok {
 				// Parse from map if needed
 				searchResult := &types.SearchResult{
-					ID:              getString(refMap, "id"),
-					Content:         getString(refMap, "content"),
-					Score:           getFloat64(refMap, "score"),
-					KnowledgeID:     getString(refMap, "knowledge_id"),
-					KnowledgeTitle:  getString(refMap, "knowledge_title"),
-					ChunkIndex:      int(getFloat64(refMap, "chunk_index")),
-					KnowledgeBaseID: getString(refMap, "knowledge_base_id"),
+					ID:                   getString(refMap, "id"),
+					Content:              getString(refMap, "content"),
+					Score:                getFloat64(refMap, "score"),
+					KnowledgeID:          getString(refMap, "knowledge_id"),
+					KnowledgeTitle:       getString(refMap, "knowledge_title"),
+					ChunkIndex:           int(getFloat64(refMap, "chunk_index")),
+					KnowledgeDescription: getString(refMap, "knowledge_description"),
+					KnowledgeBaseID:      getString(refMap, "knowledge_base_id"),
 				}
 
 				if meta, ok := refMap["metadata"].(map[string]interface{}); ok {
@@ -442,6 +443,46 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 			if steps, ok := data.AgentSteps.([]types.AgentStep); ok {
 				h.assistantMessage.AgentSteps = steps
 			}
+		}
+	}
+
+	// Fallback: if no answer events were streamed but we have a final answer,
+	// emit it as answer events so the frontend can render it properly.
+	// This guards against edge cases where the LLM stops without calling final_answer.
+	if h.finalAnswer == "" && data.FinalAnswer != "" {
+		logger.GetLogger(h.ctx).Warnf(
+			"No answer events were streamed, emitting fallback answer (len=%d). "+
+				"This typically happens when: (1) model stopped naturally and content was sent as thought events, "+
+				"or (2) Ollama model returned tool calls non-incrementally. "+
+				"total_steps=%d, total_duration_ms=%d",
+			len(data.FinalAnswer), data.TotalSteps, data.TotalDurationMs,
+		)
+		fallbackID := fmt.Sprintf("answer-fallback-%d", time.Now().UnixMilli())
+		if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
+			ID:        fallbackID,
+			Type:      types.ResponseTypeAnswer,
+			Content:   data.FinalAnswer,
+			Done:      false,
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"event_id":    fallbackID,
+				"is_fallback": true,
+			},
+		}); err != nil {
+			logger.GetLogger(h.ctx).Errorf("Append fallback answer event failed: %v", err)
+		}
+		if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
+			ID:        fallbackID,
+			Type:      types.ResponseTypeAnswer,
+			Content:   "",
+			Done:      true,
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"event_id":    fallbackID,
+				"is_fallback": true,
+			},
+		}); err != nil {
+			logger.GetLogger(h.ctx).Errorf("Append fallback answer done event failed: %v", err)
 		}
 	}
 

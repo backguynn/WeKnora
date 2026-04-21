@@ -29,6 +29,7 @@ type Knowledge struct {
 	Title            string          `json:"title"`
 	Description      string          `json:"description"`
 	Source           string          `json:"source"`
+	Channel          string          `json:"channel"`
 	ParseStatus      string          `json:"parse_status"`
 	SummaryStatus    string          `json:"summary_status"`
 	EnableStatus     string          `json:"enable_status"`
@@ -88,8 +89,9 @@ var ErrDuplicateURL = errors.New("URL already exists")
 //   - metadata: Optional metadata for the knowledge entry
 //   - enableMultimodel: Optional flag to enable multimodal processing
 //   - customFileName: Optional custom file name (useful for folder uploads with path)
+//   - channel: Optional ingestion channel (e.g. "web", "api", "wechat"); empty defaults to "web"
 func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
-	knowledgeBaseID string, filePath string, metadata map[string]string, enableMultimodel *bool, customFileName string,
+	knowledgeBaseID string, filePath string, metadata map[string]string, enableMultimodel *bool, customFileName string, channel string,
 ) (*Knowledge, error) {
 	// Open the local file
 	file, err := os.Open(filePath)
@@ -150,6 +152,12 @@ func (c *Client) CreateKnowledgeFromFile(ctx context.Context,
 		}
 	}
 
+	if channel != "" {
+		if err := writer.WriteField("channel", channel); err != nil {
+			return nil, fmt.Errorf("failed to write channel field: %w", err)
+		}
+	}
+
 	// Close the multipart writer
 	err = writer.Close()
 	if err != nil {
@@ -204,6 +212,8 @@ type CreateKnowledgeFromURLRequest struct {
 	Title string `json:"title,omitempty"`
 	// TagID is the optional tag ID to associate with the knowledge entry
 	TagID string `json:"tag_id,omitempty"`
+	// Channel identifies the ingestion channel (e.g. "web", "browser_extension", "api")
+	Channel string `json:"channel,omitempty"`
 }
 
 // CreateKnowledgeFromURL creates a knowledge entry from a URL.
@@ -435,9 +445,10 @@ func (c *Client) UpdateImageInfo(ctx context.Context,
 
 // CreateManualKnowledgeRequest contains the parameters for creating a manual Markdown knowledge entry.
 type CreateManualKnowledgeRequest struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Title      string `json:"title"`
+	Content    string `json:"content"`
 	TagID   string `json:"tag_id,omitempty"`
+	Channel string `json:"channel,omitempty"`
 }
 
 // UpdateManualKnowledgeRequest contains the parameters for updating a manual Markdown knowledge entry.

@@ -18,6 +18,7 @@ type ToolResult struct {
 	Output  string                 `json:"output"`          // Human-readable output
 	Data    map[string]interface{} `json:"data,omitempty"`  // Structured data for programmatic use
 	Error   string                 `json:"error,omitempty"` // Error message if execution failed
+	Images  []string               `json:"images,omitempty"` // Base64 data URIs from tool (e.g. MCP image content)
 }
 
 // ToolCall represents a single tool invocation within an agent step
@@ -48,6 +49,7 @@ type Message struct {
 	KnowledgeReferences []*SearchResult `json:"knowledge_references"`
 	AgentSteps          []AgentStep     `json:"agent_steps,omitempty"` // Agent execution steps (only for assistant messages)
 	IsCompleted         bool            `json:"is_completed"`
+	Channel             string          `json:"channel,omitempty"` // Source channel: "web", "api", "im", etc.
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
 }

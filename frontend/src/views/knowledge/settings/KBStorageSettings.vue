@@ -24,7 +24,6 @@
             size="medium"
             :placeholder="$t('kbSettings.storage.selectPlaceholder')"
             style="width: 100%; min-width: 220px;"
-            :disabled="props.hasFiles"
             @change="handleChange"
           >
             <t-option
@@ -41,7 +40,7 @@
               </span>
             </t-option>
           </t-select>
-          <p v-if="props.hasFiles" class="option-hint locked-hint">{{ $t('kbSettings.storage.lockedHint') }}</p>
+          <p v-if="props.hasFiles" class="option-hint change-warning">{{ $t('kbSettings.storage.changeWarning') }}</p>
           <p v-else-if="selectedOption?.desc" class="option-hint">{{ selectedOption.desc }}</p>
           <a v-if="showGoSettings" href="javascript:void(0)" class="go-settings" @click.prevent="goToStorageSettings">{{ $t('kbSettings.storage.goGlobalSettings') }}</a>
         </div>
@@ -114,6 +113,13 @@ const engineOptions = computed(() => {
       desc: t('kbSettings.storage.engineS3Desc'),
       available: statusMap.s3,
       disabled: statusMap.s3 === false,
+    },
+    {
+      value: 'oss',
+      label: t('kbSettings.storage.engineOss'),
+      desc: t('kbSettings.storage.engineOssDesc'),
+      available: statusMap.oss,
+      disabled: statusMap.oss === false,
     },
   ]
 })
@@ -209,8 +215,8 @@ onMounted(load)
 }
 
 .setting-info {
-  flex: 1;
-  max-width: 65%;
+  flex: 0 0 40%;
+  max-width: 40%;
   padding-right: 24px;
 
   label {
@@ -230,8 +236,8 @@ onMounted(load)
 }
 
 .setting-control {
-  flex-shrink: 0;
-  min-width: 280px;
+  flex: 0 0 55%;
+  max-width: 55%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -251,6 +257,10 @@ onMounted(load)
   line-height: 1.4;
 
   &.locked-hint {
+    color: var(--td-warning-color);
+  }
+
+  &.change-warning {
     color: var(--td-warning-color);
   }
 }

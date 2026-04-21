@@ -25,6 +25,7 @@
                 >
                   <t-icon :name="item.icon" class="nav-icon" />
                   <span class="nav-label">{{ item.label }}</span>
+                  <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
                 </div>
               </div>
             </div>
@@ -150,9 +151,99 @@
                   <GraphSettings
                     v-if="formData"
                     :graph-extract="formData.nodeExtractConfig"
+                    :model-id="formData.modelConfig.llmModelId"
                     :all-models="allModels"
                     @update:graphExtract="handleNodeExtractUpdate"
                   />
+                </div>
+
+                <!-- 多模态配置 -->
+                <div v-if="!isFAQ" v-show="currentSection === 'multimodal'" class="section">
+                  <div v-if="formData" class="kb-multimodal-settings">
+                    <div class="section-header">
+                      <h2>{{ $t('knowledgeEditor.multimodal.title') }}</h2>
+                      <p class="section-description">{{ $t('knowledgeEditor.multimodal.description') }}</p>
+                    </div>
+
+                    <div class="settings-group">
+                      <!-- 多模态开关 -->
+                      <div class="setting-row">
+                        <div class="setting-info">
+                          <label>{{ $t('knowledgeEditor.advanced.multimodal.label') }}</label>
+                          <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.description') }}</p>
+                        </div>
+                        <div class="setting-control">
+                          <t-switch
+                            v-model="formData.multimodalConfig.enabled"
+                            @change="handleMultimodalToggle"
+                            size="medium"
+                          />
+                        </div>
+                      </div>
+
+                      <!-- VLLM 模型选择（多模态启用时） -->
+                      <div v-if="formData.multimodalConfig.enabled" class="setting-row">
+                        <div class="setting-info">
+                          <label>{{ $t('knowledgeEditor.advanced.multimodal.vllmLabel') }} <span class="required">*</span></label>
+                          <p class="desc">{{ $t('knowledgeEditor.advanced.multimodal.vllmDescription') }}</p>
+                        </div>
+                        <div class="setting-control">
+                          <ModelSelector
+                            model-type="VLLM"
+                            :selected-model-id="formData.multimodalConfig.vllmModelId"
+                            :all-models="allModels"
+                            @update:selected-model-id="handleMultimodalVLLMChange"
+                            @add-model="handleAddVLLMModel"
+                            :placeholder="$t('knowledgeEditor.advanced.multimodal.vllmPlaceholder')"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 音视频语音识别（ASR）设置 -->
+                <div v-if="!isFAQ" v-show="currentSection === 'asr'" class="section">
+                  <div v-if="formData" class="kb-multimodal-settings">
+                    <div class="section-header">
+                      <h2>{{ $t('knowledgeEditor.asr.title') }}</h2>
+                      <p class="section-description">{{ $t('knowledgeEditor.asr.description') }}</p>
+                    </div>
+
+                    <div class="settings-group">
+                      <!-- ASR 开关 -->
+                      <div class="setting-row">
+                        <div class="setting-info">
+                          <label>{{ $t('knowledgeEditor.asr.label') }}</label>
+                          <p class="desc">{{ $t('knowledgeEditor.asr.desc') }}</p>
+                        </div>
+                        <div class="setting-control">
+                          <t-switch
+                            v-model="formData.asrConfig.enabled"
+                            size="medium"
+                          />
+                        </div>
+                      </div>
+
+                      <!-- ASR 模型选择 -->
+                      <div v-if="formData.asrConfig.enabled" class="setting-row">
+                        <div class="setting-info">
+                          <label>{{ $t('knowledgeEditor.asr.modelLabel') }} <span class="required">*</span></label>
+                          <p class="desc">{{ $t('knowledgeEditor.asr.modelDescription') }}</p>
+                        </div>
+                        <div class="setting-control">
+                          <ModelSelector
+                            model-type="ASR"
+                            :selected-model-id="formData.asrConfig.modelId"
+                            :all-models="allModels"
+                            @update:selected-model-id="(val: string) => { if (formData) formData.asrConfig.modelId = val }"
+                            @add-model="handleAddASRModel"
+                            :placeholder="$t('knowledgeEditor.asr.modelPlaceholder')"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- 高级设置 -->
@@ -160,12 +251,15 @@
                   <KBAdvancedSettings
                     ref="advancedSettingsRef"
                     v-if="formData"
-                    :multimodal="formData.multimodalConfig"
                     :question-generation="formData.questionGenerationConfig"
                     :all-models="allModels"
-                    @update:multimodal="handleMultimodalUpdate"
                     @update:question-generation="handleQuestionGenerationUpdate"
                   />
+                </div>
+
+                <!-- 数据源管理（仅编辑模式） -->
+                <div v-if="mode === 'edit' && kbId" v-show="currentSection === 'datasource'" class="section">
+                  <DataSourceSettings :kb-id="kbId" @count="dsCount = $event" />
                 </div>
 
                 <!-- 共享设置（仅编辑模式） -->
@@ -193,21 +287,25 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKnowledgeBase } from '@/api/knowledge-base'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { listModels } from '@/api/model'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import KBModelConfig from './settings/KBModelConfig.vue'
 import KBParserSettings from './settings/KBParserSettings.vue'
 import KBStorageSettings from './settings/KBStorageSettings.vue'
 import KBChunkingSettings from './settings/KBChunkingSettings.vue'
 import KBAdvancedSettings from './settings/KBAdvancedSettings.vue'
+import ModelSelector from '@/components/ModelSelector.vue'
 import GraphSettings from './settings/GraphSettings.vue'
 import KBShareSettings from './settings/KBShareSettings.vue'
+import DataSourceSettings from './settings/DataSourceSettings.vue'
 import { useI18n } from 'vue-i18n'
 
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 // Props
@@ -229,9 +327,11 @@ const saving = ref(false)
 const loading = ref(false)
 const allModels = ref<any[]>([])
 const hasFiles = ref(false)
+const initialStorageProvider = ref<string>('')
+const dsCount = ref(0)
 
 const navItems = computed(() => {
-  const items = [
+  const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
     { key: 'models', icon: 'control-platform', label: t('knowledgeEditor.sidebar.models') }
   ]
@@ -240,14 +340,18 @@ const navItems = computed(() => {
   } else {
     items.push(
       { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
+      { key: 'multimodal', icon: 'image', label: t('knowledgeEditor.sidebar.multimodal') },
+      { key: 'asr', icon: 'sound', label: t('knowledgeEditor.sidebar.asr') },
       { key: 'storage', icon: 'cloud', label: t('knowledgeEditor.sidebar.storage') },
       { key: 'chunking', icon: 'file-copy', label: t('knowledgeEditor.sidebar.chunking') },
       { key: 'graph', icon: 'chart-bubble', label: t('knowledgeEditor.sidebar.graph') },
       { key: 'advanced', icon: 'setting', label: t('knowledgeEditor.sidebar.advanced') }
     )
+    if (props.mode === 'edit' && props.kbId) {
+      items.push({ key: 'datasource', icon: 'cloud-download', label: t('knowledgeEditor.sidebar.datasource'), badge: dsCount.value || undefined })
+    }
   }
-  // 只在编辑模式下显示共享标签页
-  if (props.mode === 'edit' && props.kbId) {
+  if (props.mode === 'edit' && props.kbId && !authStore.isLiteMode) {
     items.push({ key: 'share', icon: 'share', label: t('knowledgeEditor.sidebar.share') })
   }
   return items
@@ -297,14 +401,19 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       chunkOverlap: 100,
       separators: ['\n\n', '\n', '。', '！', '？', ';', '；'],
       parserEngineRules: undefined as any,
-      enableParentChild: false,
+      enableParentChild: true,
       parentChunkSize: 4096,
       childChunkSize: 384
     },
-    storageProvider: 'local' as string,
+    storageProvider: '' as string,
     multimodalConfig: {
       enabled: false,
       vllmModelId: ''
+    },
+    asrConfig: {
+      enabled: false,
+      modelId: '',
+      language: ''
     },
     nodeExtractConfig: {
       enabled: false,
@@ -321,7 +430,7 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       }>
     },
     questionGenerationConfig: {
-      enabled: false,
+      enabled: true,
       questionCount: 3
     },
   }
@@ -381,10 +490,15 @@ const loadKBData = async () => {
         parentChunkSize: kb.chunking_config?.parent_chunk_size || 4096,
         childChunkSize: kb.chunking_config?.child_chunk_size || 384
       },
-      storageProvider: (kb.storage_config?.provider || 'local') as string,
+      storageProvider: (kb.storage_provider_config?.provider || kb.storage_config?.provider || 'local') as string,
       multimodalConfig: {
         enabled: !!kb.vlm_config?.enabled,
         vllmModelId: kb.vlm_config?.model_id || ''
+      },
+      asrConfig: {
+        enabled: !!kb.asr_config?.enabled,
+        modelId: kb.asr_config?.model_id || '',
+        language: kb.asr_config?.language || ''
       },
       nodeExtractConfig: {
         enabled: kb.extract_config?.enabled || false,
@@ -401,6 +515,7 @@ const loadKBData = async () => {
         questionCount: kb.question_generation_config?.question_count || 3
       },
     }
+    initialStorageProvider.value = formData.value.storageProvider
   } catch (error) {
     console.error('Failed to load knowledge base data:', error)
     MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'))
@@ -429,10 +544,24 @@ const handleParserEngineRulesUpdate = (rules: any[]) => {
   }
 }
 
-const handleMultimodalUpdate = (config: any) => {
-  if (formData.value) {
-    formData.value.multimodalConfig = { ...config }
+const handleMultimodalToggle = () => {
+  if (formData.value && !formData.value.multimodalConfig.enabled) {
+    formData.value.multimodalConfig.vllmModelId = ''
   }
+}
+
+const handleMultimodalVLLMChange = (modelId: string) => {
+  if (formData.value) {
+    formData.value.multimodalConfig.vllmModelId = modelId
+  }
+}
+
+const handleAddVLLMModel = () => {
+  uiStore.openSettings('models', 'vllm')
+}
+
+const handleAddASRModel = () => {
+  uiStore.openSettings('models', 'asr')
 }
 
 const handleStorageProviderUpdate = (value: string) => {
@@ -478,13 +607,10 @@ const validateForm = (): boolean => {
   }
 
   // 验证多模态配置（如果启用）
-  if (formData.value.multimodalConfig.enabled) {
-    const validation = (advancedSettingsRef.value as any)?.validateMultimodal?.()
-    if (validation && !validation.valid) {
-      MessagePlugin.warning(validation.message || t('knowledgeEditor.messages.multimodalInvalid'))
-      currentSection.value = 'advanced'
-      return false
-    }
+  if (formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
+    MessagePlugin.warning(t('knowledgeEditor.messages.multimodalInvalid'))
+    currentSection.value = 'multimodal'
+    return false
   }
 
   if (formData.value.type === 'faq' && !formData.value.faqConfig?.indexMode) {
@@ -528,7 +654,20 @@ const buildSubmitData = () => {
       : ''
   }
 
+  // 添加ASR语音识别配置
+  data.asr_config = {
+    enabled: formData.value.asrConfig?.enabled || false,
+    model_id: formData.value.asrConfig?.enabled
+      ? (formData.value.asrConfig?.modelId || '')
+      : '',
+    language: formData.value.asrConfig?.language || ''
+  }
+
   // 存储引擎：仅传 provider，参数从全局设置读取
+  // Write to storage_provider_config (authoritative) + storage_config (legacy dual-write)
+  data.storage_provider_config = {
+    provider: formData.value.storageProvider || 'local'
+  }
   data.storage_config = {
     provider: formData.value.storageProvider || 'local'
   }
@@ -568,6 +707,34 @@ const handleSubmit = async () => {
     return
   }
 
+  // 编辑模式下，若已有文件且存储引擎发生了变化，弹窗确认
+  if (
+    props.mode === 'edit' &&
+    hasFiles.value &&
+    formData.value &&
+    initialStorageProvider.value &&
+    formData.value.storageProvider !== initialStorageProvider.value
+  ) {
+    const dialog = DialogPlugin.confirm({
+      header: t('common.confirm'),
+      body: t('knowledgeEditor.messages.storageChangeConfirm'),
+      confirmBtn: t('common.confirm'),
+      cancelBtn: t('common.cancel'),
+      onConfirm: () => {
+        dialog.destroy()
+        doSubmit()
+      },
+      onCancel: () => {
+        dialog.destroy()
+      },
+    })
+    return
+  }
+
+  doSubmit()
+}
+
+const doSubmit = async () => {
   saving.value = true
   try {
     const data = buildSubmitData()
@@ -608,6 +775,7 @@ const handleSubmit = async () => {
         llmModelId: data.summary_model_id,
         embeddingModelId: data.embedding_model_id,
         vlm_config: data.vlm_config,
+        asr_config: data.asr_config,
         documentSplitting: {
           chunkSize: data.chunking_config.chunk_size,
           chunkOverlap: data.chunking_config.chunk_overlap,
@@ -620,7 +788,7 @@ const handleSubmit = async () => {
         multimodal: {
           enabled: !!data.vlm_config?.enabled
         },
-        storageProvider: data.storage_config?.provider || 'local',
+        storageProvider: data.storage_provider_config?.provider || data.storage_config?.provider || 'local',
         nodeExtract: {
           enabled: data.extract_config?.enabled || false,
           text: data.extract_config?.text || '',
@@ -653,6 +821,7 @@ const resetState = () => {
   currentSection.value = 'basic'
   formData.value = null
   hasFiles.value = false
+  initialStorageProvider.value = ''
   saving.value = false
   loading.value = false
 }
@@ -726,7 +895,7 @@ watch(
 .settings-modal {
   position: relative;
   width: 90vw;
-  max-width: 1100px;
+  max-width: 1000px;
   height: 85vh;
   max-height: 750px;
   background: var(--td-bg-color-container);
@@ -831,6 +1000,27 @@ watch(
   flex: 1;
 }
 
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--td-bg-color-component);
+  color: var(--td-text-color-secondary);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-item.active .nav-badge {
+  background: var(--td-brand-color);
+  color: #fff;
+}
+
 .settings-content {
   flex: 1;
   display: flex;
@@ -860,7 +1050,7 @@ watch(
   .section-title {
     margin: 0 0 8px 0;
     font-family: "PingFang SC";
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 600;
     color: var(--td-text-color-primary);
   }
@@ -890,7 +1080,7 @@ watch(
   display: block;
   margin-bottom: 8px;
   font-family: "PingFang SC";
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--td-text-color-primary);
 
@@ -981,6 +1171,81 @@ watch(
         color: var(--td-text-color-placeholder);
       }
     }
+  }
+}
+
+// 多模态配置内联样式（与子组件 KBStorageSettings/KBAdvancedSettings 一致）
+.kb-multimodal-settings {
+  width: 100%;
+
+  .section-header {
+    margin-bottom: 32px;
+
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--td-text-color-primary);
+      margin: 0 0 8px 0;
+    }
+
+    .section-description {
+      font-size: 14px;
+      color: var(--td-text-color-secondary);
+      margin: 0;
+      line-height: 1.5;
+    }
+  }
+
+  .settings-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--td-component-stroke);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  .setting-info {
+    flex: 1;
+    max-width: 65%;
+    padding-right: 24px;
+
+    label {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--td-text-color-primary);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .desc {
+      font-size: 13px;
+      color: var(--td-text-color-secondary);
+      margin: 0;
+      line-height: 1.5;
+    }
+  }
+
+  .setting-control {
+    flex-shrink: 0;
+    min-width: 280px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  .required {
+    color: var(--td-error-color);
+    margin-left: 2px;
+    font-weight: 500;
   }
 }
 </style>

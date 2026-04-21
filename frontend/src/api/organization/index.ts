@@ -1,4 +1,5 @@
 import { get, post, put, del } from '@/utils/request'
+import type { CustomAgent } from '@/api/agent'
 
 // Organization types
 export interface Organization {
@@ -254,7 +255,7 @@ export interface AgentShareResponse {
 }
 
 export interface SharedAgentInfo {
-  agent: { id: string; name: string; description?: string; [key: string]: any }
+  agent: CustomAgent
   share_id: string
   organization_id: string
   org_name: string

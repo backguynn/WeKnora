@@ -27,6 +27,15 @@ type MentionedItemRequest struct {
 	KBType string `json:"kb_type"` // "document" or "faq" (only for kb type)
 }
 
+// ImageAttachment represents an image in a chat request.
+// Frontend sends base64 data in the Data field; the backend saves, runs VLM analysis,
+// and populates URL/Caption before proceeding with the chat pipeline.
+type ImageAttachment struct {
+	Data    string `json:"data,omitempty"`    // base64 data URI from frontend (data:image/png;base64,...)
+	URL     string `json:"url,omitempty"`     // serving URL after saving to storage
+	Caption string `json:"caption,omitempty"` // VLM analysis result (context-aware, single call)
+}
+
 // CreateKnowledgeQARequest defines the request structure for knowledge QA
 type CreateKnowledgeQARequest struct {
 	Query            string                 `json:"query"              binding:"required"` // Query text for knowledge base search
@@ -39,6 +48,16 @@ type CreateKnowledgeQARequest struct {
 	MentionedItems   []MentionedItemRequest `json:"mentioned_items"`                       // @mentioned knowledge bases and files
 	DisableTitle     bool                   `json:"disable_title"`                         // Whether to disable auto title generation
 	EnableMemory     bool                   `json:"enable_memory"`                         // Whether memory feature is enabled for this request
+	Images           []ImageAttachment      `json:"images"`                                // Attached images for multimodal chat
+	AttachmentUploads []AttachmentUpload    `json:"attachment_uploads,omitempty"`          // Attached files (documents, audio, etc.)
+	Channel          string                 `json:"channel"`                               // Source channel: "web", "api", "im", etc.
+}
+
+// AttachmentUpload represents a file attachment upload from the client
+type AttachmentUpload struct {
+	Data     string `json:"data"`      // Base64-encoded file content
+	FileName string `json:"file_name"` // Original filename
+	FileSize int64  `json:"file_size"` // File size in bytes
 }
 
 // SearchKnowledgeRequest defines the request structure for searching knowledge without LLM summarization

@@ -19,9 +19,11 @@ type AsynqTaskParams struct {
 	KnowledgeService     interfaces.KnowledgeService
 	KnowledgeBaseService interfaces.KnowledgeBaseService
 	TagService           interfaces.KnowledgeTagService
+	DataSourceService    interfaces.DataSourceService
 	ChunkExtractor       interfaces.TaskHandler `name:"chunkExtractor"`
 	DataTableSummary     interfaces.TaskHandler `name:"dataTableSummary"`
 	ImageMultimodal      interfaces.TaskHandler `name:"imageMultimodal"`
+	KnowledgePostProcess interfaces.TaskHandler `name:"knowledgePostProcess"`
 }
 
 func getAsynqRedisClientOpt() *asynq.RedisClientOpt {
@@ -78,6 +80,9 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	// Register document processing handler
 	mux.HandleFunc(types.TypeDocumentProcess, params.KnowledgeService.ProcessDocument)
 
+	// Register manual knowledge processing handler (cleanup + re-indexing)
+	mux.HandleFunc(types.TypeManualProcess, params.KnowledgeService.ProcessManualUpdate)
+
 	// Register FAQ import handler (includes dry run mode)
 	mux.HandleFunc(types.TypeFAQImport, params.KnowledgeService.ProcessFAQImport)
 
@@ -104,6 +109,12 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 
 	// Register image multimodal handler
 	mux.HandleFunc(types.TypeImageMultimodal, params.ImageMultimodal.Handle)
+
+	// Register knowledge post process handler
+	mux.HandleFunc(types.TypeKnowledgePostProcess, params.KnowledgePostProcess.Handle)
+
+	// Register data source sync handler
+	mux.HandleFunc(types.TypeDataSourceSync, params.DataSourceService.ProcessSync)
 
 	go func() {
 		// Start the server

@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	elasticsearchRetriever "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch"
@@ -26,25 +25,162 @@ import (
 )
 
 type elasticsearchRepository struct {
-	client *elasticsearch.Client
-	index  string
+	client           *elasticsearch.Client
+	index            string
+	useKeywordSuffix bool // Whether to append .keyword suffix to ID field names in queries
+	numberOfShards   int  // Shard count for index creation (0 = ES default)
+	numberOfReplicas int  // Replica count for index creation (-1 = unset, use ES default)
 }
 
+// NewElasticsearchEngineRepository creates and initializes a new Elasticsearch v7 repository.
+// indexCfg is optional — pass nil to use env var / default values (env path).
 func NewElasticsearchEngineRepository(client *elasticsearch.Client,
 	config *config.Config,
+	indexCfg *typesLocal.IndexConfig,
 ) interfaces.RetrieveEngineRepository {
 	log := logger.GetLogger(context.Background())
 	log.Info("[ElasticsearchV7] Initializing Elasticsearch v7 retriever engine repository")
 
-	indexName := os.Getenv("ELASTICSEARCH_INDEX")
-	if indexName == "" {
-		log.Warn("[ElasticsearchV7] ELASTICSEARCH_INDEX environment variable not set, using default index name")
-		indexName = "xwrag_default"
-	}
+	indexName := typesLocal.ResolveIndexName(indexCfg, "ELASTICSEARCH_INDEX", "xwrag_default")
 
 	log.Infof("[ElasticsearchV7] Using index: %s", indexName)
-	res := &elasticsearchRepository{client: client, index: indexName}
+	res := &elasticsearchRepository{
+		client:           client,
+		index:            indexName,
+		numberOfShards:   indexCfg.GetNumberOfShards(0),
+		numberOfReplicas: indexCfg.GetNumberOfReplicas(-1),
+	}
+	if err := res.createIndexIfNotExists(context.Background()); err != nil {
+		log.Errorf("[ElasticsearchV7] Failed to create index: %v", err)
+	}
+	res.detectFieldTypes(context.Background())
 	return res
+}
+
+// idField returns the query field name for an ID field, appending ".keyword"
+// suffix when the index uses text-type mappings with keyword sub-fields.
+func (e *elasticsearchRepository) idField(name string) string {
+	if e.useKeywordSuffix {
+		return name + ".keyword"
+	}
+	return name
+}
+
+// detectFieldTypes inspects the index mapping to determine whether ID fields
+// are mapped as "keyword" (no suffix needed) or "text" (needs ".keyword" suffix).
+func (e *elasticsearchRepository) detectFieldTypes(ctx context.Context) {
+	log := logger.GetLogger(ctx)
+
+	resp, err := e.client.Indices.GetMapping(
+		e.client.Indices.GetMapping.WithIndex(e.index),
+		e.client.Indices.GetMapping.WithContext(ctx),
+	)
+	if err != nil {
+		log.Warnf("[ElasticsearchV7] Failed to get index mapping, defaulting to .keyword suffix: %v", err)
+		e.useKeywordSuffix = true
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.IsError() {
+		log.Warnf("[ElasticsearchV7] GetMapping returned error: %s, defaulting to .keyword suffix", resp.String())
+		e.useKeywordSuffix = true
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Warnf("[ElasticsearchV7] Failed to parse mapping response: %v, defaulting to .keyword suffix", err)
+		e.useKeywordSuffix = true
+		return
+	}
+
+	indexData, _ := result[e.index].(map[string]interface{})
+	if indexData == nil {
+		log.Warnf("[ElasticsearchV7] Index %s not found in mapping response, defaulting to .keyword suffix", e.index)
+		e.useKeywordSuffix = true
+		return
+	}
+	mappings, _ := indexData["mappings"].(map[string]interface{})
+	if mappings == nil {
+		e.useKeywordSuffix = true
+		return
+	}
+	properties, _ := mappings["properties"].(map[string]interface{})
+	if properties == nil {
+		log.Infof("[ElasticsearchV7] No mapping detected for ID fields (empty index?), defaulting to .keyword suffix")
+		e.useKeywordSuffix = true
+		return
+	}
+	chunkIDProp, _ := properties["chunk_id"].(map[string]interface{})
+	if chunkIDProp == nil {
+		e.useKeywordSuffix = true
+		return
+	}
+	if fieldType, _ := chunkIDProp["type"].(string); fieldType == "keyword" {
+		e.useKeywordSuffix = false
+		log.Infof("[ElasticsearchV7] Detected keyword type for ID fields, querying without .keyword suffix")
+	} else {
+		e.useKeywordSuffix = true
+		log.Infof("[ElasticsearchV7] Detected %s type for ID fields, querying with .keyword suffix", fieldType)
+	}
+}
+
+// createIndexIfNotExists checks if the specified index exists and creates it if not.
+// Uses esapi low-level client since v7 SDK does not have typed API.
+func (e *elasticsearchRepository) createIndexIfNotExists(ctx context.Context) error {
+	log := logger.GetLogger(ctx)
+	log.Debugf("[ElasticsearchV7] Checking if index exists: %s", e.index)
+
+	res, err := e.client.Indices.Exists([]string{e.index}, e.client.Indices.Exists.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("check index existence: %w", err)
+	}
+	defer res.Body.Close()
+
+	if !res.IsError() {
+		log.Debugf("[ElasticsearchV7] Index already exists: %s", e.index)
+		return nil
+	}
+
+	// Build settings body with optional shards/replicas
+	var body string
+	if e.numberOfShards > 0 || e.numberOfReplicas >= 0 {
+		settings := make(map[string]interface{})
+		if e.numberOfShards > 0 {
+			settings["number_of_shards"] = e.numberOfShards
+		}
+		if e.numberOfReplicas >= 0 {
+			settings["number_of_replicas"] = e.numberOfReplicas
+		}
+		bodyBytes, err := json.Marshal(map[string]interface{}{"settings": settings})
+		if err != nil {
+			return fmt.Errorf("marshal index settings: %w", err)
+		}
+		body = string(bodyBytes)
+	}
+
+	log.Infof("[ElasticsearchV7] Creating index: %s", e.index)
+	var opts []func(*esapi.IndicesCreateRequest)
+	opts = append(opts, e.client.Indices.Create.WithContext(ctx))
+	if body != "" {
+		opts = append(opts, e.client.Indices.Create.WithBody(strings.NewReader(body)))
+	}
+
+	createRes, err := e.client.Indices.Create(e.index, opts...)
+	if err != nil {
+		return fmt.Errorf("create index: %w", err)
+	}
+	defer createRes.Body.Close()
+
+	if createRes.IsError() {
+		// Log detailed response server-side; return generic message to avoid leaking cluster info
+		log.Errorf("[ElasticsearchV7] Create index response: %s", createRes.String())
+		return fmt.Errorf("failed to create index %s", e.index)
+	}
+
+	log.Infof("[ElasticsearchV7] Index created successfully: %s", e.index)
+	return nil
 }
 
 func (e *elasticsearchRepository) EngineType() typesLocal.RetrieverEngineType {
@@ -288,19 +424,19 @@ func (e *elasticsearchRepository) countBulkErrors(ctx context.Context,
 
 // DeleteByChunkIDList Delete indices by chunk ID list
 func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunkIDList []string, dimension int, knowledgeType string) error {
-	return e.deleteByFieldList(ctx, "chunk_id.keyword", chunkIDList)
+	return e.deleteByFieldList(ctx, e.idField("chunk_id"), chunkIDList)
 }
 
 // DeleteBySourceIDList Delete indices by source ID list
 func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sourceIDList []string, dimension int, knowledgeType string) error {
-	return e.deleteByFieldList(ctx, "source_id.keyword", sourceIDList)
+	return e.deleteByFieldList(ctx, e.idField("source_id"), sourceIDList)
 }
 
 // DeleteByKnowledgeIDList Delete indices by knowledge ID list
 func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	knowledgeIDList []string, dimension int, knowledgeType string,
 ) error {
-	return e.deleteByFieldList(ctx, "knowledge_id.keyword", knowledgeIDList)
+	return e.deleteByFieldList(ctx, e.idField("knowledge_id"), knowledgeIDList)
 }
 
 // deleteByFieldList Delete documents by field value list
@@ -368,14 +504,14 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	if len(params.KnowledgeBaseIDs) > 0 {
 		must = append(must, map[string]interface{}{
 			"terms": map[string]interface{}{
-				"knowledge_base_id.keyword": params.KnowledgeBaseIDs,
+				e.idField("knowledge_base_id"): params.KnowledgeBaseIDs,
 			},
 		})
 	}
 	if len(params.KnowledgeIDs) > 0 {
 		must = append(must, map[string]interface{}{
 			"terms": map[string]interface{}{
-				"knowledge_id.keyword": params.KnowledgeIDs,
+				e.idField("knowledge_id"): params.KnowledgeIDs,
 			},
 		})
 	}
@@ -383,7 +519,7 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	if len(params.TagIDs) > 0 {
 		must = append(must, map[string]interface{}{
 			"terms": map[string]interface{}{
-				"tag_id.keyword": params.TagIDs,
+				e.idField("tag_id"): params.TagIDs,
 			},
 		})
 	}
@@ -400,14 +536,14 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	if len(params.ExcludeKnowledgeIDs) > 0 {
 		mustNot = append(mustNot, map[string]interface{}{
 			"terms": map[string]interface{}{
-				"knowledge_id.keyword": params.ExcludeKnowledgeIDs,
+				e.idField("knowledge_id"): params.ExcludeKnowledgeIDs,
 			},
 		})
 	}
 	if len(params.ExcludeChunkIDs) > 0 {
 		mustNot = append(mustNot, map[string]interface{}{
 			"terms": map[string]interface{}{
-				"chunk_id.keyword": params.ExcludeChunkIDs,
+				e.idField("chunk_id"): params.ExcludeChunkIDs,
 			},
 		})
 	}
@@ -1185,7 +1321,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
 		query := map[string]interface{}{
 			"query": map[string]interface{}{
 				"terms": map[string]interface{}{
-					"chunk_id.keyword": enabledChunkIDs,
+					e.idField("chunk_id"): enabledChunkIDs,
 				},
 			},
 			"script": map[string]interface{}{
@@ -1220,7 +1356,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
 		query := map[string]interface{}{
 			"query": map[string]interface{}{
 				"terms": map[string]interface{}{
-					"chunk_id.keyword": disabledChunkIDs,
+					e.idField("chunk_id"): disabledChunkIDs,
 				},
 			},
 			"script": map[string]interface{}{
@@ -1278,7 +1414,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkTagID(
 		query := map[string]interface{}{
 			"query": map[string]interface{}{
 				"terms": map[string]interface{}{
-					"chunk_id.keyword": chunkIDs,
+					e.idField("chunk_id"): chunkIDs,
 				},
 			},
 			"script": map[string]interface{}{

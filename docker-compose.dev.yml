@@ -2,7 +2,7 @@
 services:
   # 只启动依赖的基础设施服务
   postgres:
-    image: paradedb/paradedb:v0.21.4-pg17
+    image: paradedb/paradedb:v0.22.2-pg17
     container_name: WeKnora-postgres-dev
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -73,6 +73,35 @@ services:
       - qdrant
       - full
 
+  milvus:
+    image: milvusdb/milvus:v2.6.11
+    container_name: WeKnora-milvus-dev
+    security_opt:
+      - seccomp:unconfined
+    command: ["milvus", "run", "standalone"]
+    environment:
+      - ETCD_USE_EMBED=true
+      - ETCD_DATA_DIR=/var/lib/milvus/etcd
+      - COMMON_STORAGETYPE=local
+      - DEPLOY_MODE=STANDALONE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_HEALTH_PORT:-9091}:9091"
+    volumes:
+      - milvus_data_dev:/var/lib/milvus
+    networks:
+      - WeKnora-network-dev
+    restart: unless-stopped
+    profiles:
+      - milvus
+      - full
+
   neo4j:
     image: neo4j:latest
     container_name: WeKnora-neo4j-dev
@@ -110,7 +139,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.docreader
-    image: wechatopenai/weknora-docreader:latest
+    image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-docreader-dev
     ports:
       - "${DOCREADER_PORT:-50051}:50051"
@@ -121,7 +150,7 @@ services:
       - MINERU_ENDPOINT=${MINERU_ENDPOINT:-}
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
     healthcheck:
-      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,6 +186,19 @@ services:
       - jaeger
       - full
 
+  dex:
+    image: dexidp/dex:latest
+    container_name: WeKnora-dex-dev
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./misc/dex-config.yaml:/etc/dex/config.yaml
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    profiles:
+      - dex
+      - full
+
+
 networks:
   WeKnora-network-dev:
     driver: bridge
@@ -168,5 +210,5 @@ volumes:
   neo4j-data-dev:
   jaeger_data_dev:
   qdrant_data_dev:
+  milvus_data_dev:
   docreader-tmp-dev:
-

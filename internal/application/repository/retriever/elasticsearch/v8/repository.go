@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	elasticsearchRetriever "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch"
@@ -21,33 +20,87 @@ import (
 
 // elasticsearchRepository implements the RetrieveEngineRepository interface for Elasticsearch v8
 type elasticsearchRepository struct {
-	client *elasticsearch.TypedClient // Elasticsearch client instance
-	index  string                     // Name of the Elasticsearch index to use
+	client           *elasticsearch.TypedClient // Elasticsearch client instance
+	index            string                     // Name of the Elasticsearch index to use
+	useKeywordSuffix bool                       // Whether to append .keyword suffix to ID field names in queries
+	numberOfShards   int                        // Shard count for index creation (0 = ES default)
+	numberOfReplicas int                        // Replica count for index creation (-1 = unset, use ES default)
 }
 
-// NewElasticsearchEngineRepository creates and initializes a new Elasticsearch v8 repository
-// It sets up the index and returns a repository instance ready for use
+// NewElasticsearchEngineRepository creates and initializes a new Elasticsearch v8 repository.
+// indexCfg is optional — pass nil to use env var / default values (env path).
 func NewElasticsearchEngineRepository(client *elasticsearch.TypedClient,
 	config *config.Config,
+	indexCfg *typesLocal.IndexConfig,
 ) interfaces.RetrieveEngineRepository {
 	log := logger.GetLogger(context.Background())
 	log.Info("[Elasticsearch] Initializing Elasticsearch v8 retriever engine repository")
 
-	// Get index name from environment variable or use default
-	indexName := os.Getenv("ELASTICSEARCH_INDEX")
-	if indexName == "" {
-		log.Warn("[Elasticsearch] ELASTICSEARCH_INDEX environment variable not set, using default index name")
-		indexName = "xwrag_default"
-	}
+	indexName := typesLocal.ResolveIndexName(indexCfg, "ELASTICSEARCH_INDEX", "xwrag_default")
 
 	// Create repository instance and ensure index exists
-	res := &elasticsearchRepository{client: client, index: indexName}
+	res := &elasticsearchRepository{
+		client:           client,
+		index:            indexName,
+		numberOfShards:   indexCfg.GetNumberOfShards(0),
+		numberOfReplicas: indexCfg.GetNumberOfReplicas(-1),
+	}
 	if err := res.createIndexIfNotExists(context.Background()); err != nil {
 		log.Errorf("[Elasticsearch] Failed to create index: %v", err)
 	} else {
 		log.Info("[Elasticsearch] Successfully initialized repository")
 	}
+	res.detectFieldTypes(context.Background())
 	return res
+}
+
+// idField returns the query field name for an ID field, appending ".keyword"
+// suffix when the index uses text-type mappings with keyword sub-fields.
+func (e *elasticsearchRepository) idField(name string) string {
+	if e.useKeywordSuffix {
+		return name + ".keyword"
+	}
+	return name
+}
+
+// detectFieldTypes inspects the index mapping to determine whether ID fields
+// are mapped as "keyword" (no suffix needed) or "text" (needs ".keyword" suffix).
+func (e *elasticsearchRepository) detectFieldTypes(ctx context.Context) {
+	log := logger.GetLogger(ctx)
+
+	mappingResp, err := e.client.Indices.GetMapping().Index(e.index).Do(ctx)
+	if err != nil {
+		log.Warnf("[Elasticsearch] Failed to get index mapping, defaulting to .keyword suffix: %v", err)
+		e.useKeywordSuffix = true
+		return
+	}
+
+	indexMapping, ok := mappingResp[e.index]
+	if !ok {
+		log.Warnf("[Elasticsearch] Index %s not found in mapping response, defaulting to .keyword suffix", e.index)
+		e.useKeywordSuffix = true
+		return
+	}
+
+	if prop, ok := indexMapping.Mappings.Properties["chunk_id"]; ok {
+		propBytes, err := json.Marshal(prop)
+		if err == nil {
+			var propInfo struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(propBytes, &propInfo) == nil && propInfo.Type == "keyword" {
+				e.useKeywordSuffix = false
+				log.Infof("[Elasticsearch] Detected keyword type for ID fields, querying without .keyword suffix")
+				return
+			}
+		}
+		e.useKeywordSuffix = true
+		log.Infof("[Elasticsearch] ID fields are not keyword type, querying with .keyword suffix")
+		return
+	}
+
+	log.Infof("[Elasticsearch] No mapping detected for chunk_id (empty index?), defaulting to .keyword suffix")
+	e.useKeywordSuffix = true
 }
 
 // EngineType returns the type of retriever engine (Elasticsearch)
@@ -175,7 +228,7 @@ func (e *elasticsearchRepository) DeleteByChunkIDList(ctx context.Context, chunk
 	log.Infof("[Elasticsearch] Deleting indices by chunk IDs, count: %d", len(chunkIDList))
 	// Use DeleteByQuery to delete all documents matching the chunk IDs
 	_, err := e.client.DeleteByQuery(e.index).Query(&types.Query{
-		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{"chunk_id.keyword": chunkIDList}},
+		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{e.idField("chunk_id"): chunkIDList}},
 	}).Do(ctx)
 	if err != nil {
 		log.Errorf("[Elasticsearch] Failed to delete by chunk IDs: %v", err)
@@ -198,7 +251,7 @@ func (e *elasticsearchRepository) DeleteBySourceIDList(ctx context.Context, sour
 	log.Infof("[Elasticsearch] Deleting indices by source IDs, count: %d", len(sourceIDList))
 	// Use DeleteByQuery to delete all documents matching the source IDs
 	_, err := e.client.DeleteByQuery(e.index).Query(&types.Query{
-		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{"source_id.keyword": sourceIDList}},
+		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{e.idField("source_id"): sourceIDList}},
 	}).Do(ctx)
 	if err != nil {
 		log.Errorf("[Elasticsearch] Failed to delete by source IDs: %v", err)
@@ -223,7 +276,7 @@ func (e *elasticsearchRepository) DeleteByKnowledgeIDList(ctx context.Context,
 	log.Infof("[Elasticsearch] Deleting indices by knowledge IDs, count: %d", len(knowledgeIDList))
 	// Use DeleteByQuery to delete all documents matching the knowledge IDs
 	_, err := e.client.DeleteByQuery(e.index).Query(&types.Query{
-		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{"knowledge_id.keyword": knowledgeIDList}},
+		Terms: &types.TermsQuery{TermsQuery: map[string]types.TermsQueryField{e.idField("knowledge_id"): knowledgeIDList}},
 	}).Do(ctx)
 	if err != nil {
 		log.Errorf("[Elasticsearch] Failed to delete by knowledge IDs: %v", err)
@@ -247,14 +300,14 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	if len(params.KnowledgeBaseIDs) > 0 {
 		must = append(must, types.Query{Terms: &types.TermsQuery{
 			TermsQuery: map[string]types.TermsQueryField{
-				"knowledge_base_id.keyword": params.KnowledgeBaseIDs,
+				e.idField("knowledge_base_id"): params.KnowledgeBaseIDs,
 			},
 		}})
 	}
 	if len(params.KnowledgeIDs) > 0 {
 		must = append(must, types.Query{Terms: &types.TermsQuery{
 			TermsQuery: map[string]types.TermsQueryField{
-				"knowledge_id.keyword": params.KnowledgeIDs,
+				e.idField("knowledge_id"): params.KnowledgeIDs,
 			},
 		}})
 	}
@@ -262,7 +315,7 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	if len(params.TagIDs) > 0 {
 		must = append(must, types.Query{Terms: &types.TermsQuery{
 			TermsQuery: map[string]types.TermsQueryField{
-				"tag_id.keyword": params.TagIDs,
+				e.idField("tag_id"): params.TagIDs,
 			},
 		}})
 	}
@@ -275,12 +328,12 @@ func (e *elasticsearchRepository) getBaseConds(params typesLocal.RetrieveParams)
 	}})
 	if len(params.ExcludeKnowledgeIDs) > 0 {
 		mustNot = append(mustNot, types.Query{Terms: &types.TermsQuery{
-			TermsQuery: map[string]types.TermsQueryField{"knowledge_id.keyword": params.ExcludeKnowledgeIDs},
+			TermsQuery: map[string]types.TermsQueryField{e.idField("knowledge_id"): params.ExcludeKnowledgeIDs},
 		}})
 	}
 	if len(params.ExcludeChunkIDs) > 0 {
 		mustNot = append(mustNot, types.Query{Terms: &types.TermsQuery{
-			TermsQuery: map[string]types.TermsQueryField{"chunk_id.keyword": params.ExcludeChunkIDs},
+			TermsQuery: map[string]types.TermsQueryField{e.idField("chunk_id"): params.ExcludeChunkIDs},
 		}})
 	}
 	return []types.Query{{Bool: &types.BoolQuery{Must: must, MustNot: mustNot}}}
@@ -304,9 +357,20 @@ func (e *elasticsearchRepository) createIndexIfNotExists(ctx context.Context) er
 		return nil
 	}
 
-	// Create index if it doesn't exist
+	// Create index if it doesn't exist, with optional shards/replicas settings
 	log.Infof("[Elasticsearch] Creating index: %s", e.index)
-	_, err = e.client.Indices.Create(e.index).Do(ctx)
+	createReq := e.client.Indices.Create(e.index)
+	if e.numberOfShards > 0 || e.numberOfReplicas >= 0 {
+		settings := &types.IndexSettings{}
+		if e.numberOfShards > 0 {
+			settings.NumberOfShards = fmt.Sprintf("%d", e.numberOfShards)
+		}
+		if e.numberOfReplicas >= 0 {
+			settings.NumberOfReplicas = fmt.Sprintf("%d", e.numberOfReplicas)
+		}
+		createReq = createReq.Settings(settings)
+	}
+	_, err = createReq.Do(ctx)
 	if err != nil {
 		log.Errorf("[Elasticsearch] Failed to create index: %v", err)
 		return err
@@ -642,7 +706,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
 			Must: []types.Query{
 				{Terms: &types.TermsQuery{
 					TermsQuery: map[string]types.TermsQueryField{
-						"chunk_id.keyword": enabledChunkIDs,
+						e.idField("chunk_id"): enabledChunkIDs,
 					},
 				}},
 			},
@@ -668,7 +732,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkEnabledStatus(
 			Must: []types.Query{
 				{Terms: &types.TermsQuery{
 					TermsQuery: map[string]types.TermsQueryField{
-						"chunk_id.keyword": disabledChunkIDs,
+						e.idField("chunk_id"): disabledChunkIDs,
 					},
 				}},
 			},
@@ -717,7 +781,7 @@ func (e *elasticsearchRepository) BatchUpdateChunkTagID(
 			Must: []types.Query{
 				{Terms: &types.TermsQuery{
 					TermsQuery: map[string]types.TermsQueryField{
-						"chunk_id.keyword": chunkIDs,
+						e.idField("chunk_id"): chunkIDs,
 					},
 				}},
 			},
