@@ -62,6 +62,7 @@ show_help() {
     echo "  status     서비스 상태 보기"
     echo "  app        백엔드 앱 시작(로컬 실행)"
     echo "  frontend   프론트엔드 개발 서버 시작(로컬 실행)"
+    echo "  clean-db   모든 dev 볼륨 삭제 (DB/스토리지/캐시 완전 초기화, 되돌릴 수 없음)"
     echo "  help       도움말 표시"
     echo ""
     echo "선택 Profile(start 명령용):"
@@ -197,23 +198,48 @@ start_services() {
     fi
 }
 
-# 서비스 중지
+# 서비스 중지 (모든 profile 소속 컨테이너까지 정리)
 stop_services() {
     log_info "개발 환경 서비스를 중지합니다..."
-    
+
     check_docker
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     cd "$PROJECT_ROOT"
-    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml down
-    
+    # --profile full: profile 소속 서비스(minio/qdrant/milvus/neo4j/jaeger/dex/sandbox)까지 포함
+    # --remove-orphans: 정의되지 않은 컨테이너 잔재 정리
+    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml --profile full down --remove-orphans
+
     if [ $? -eq 0 ]; then
         log_success "모든 서비스가 중지되었습니다"
         return 0
     else
         log_error "서비스 중지 실패"
+        return 1
+    fi
+}
+
+# 개발 환경 볼륨 완전 초기화 (컨테이너 + 네트워크 + 볼륨 삭제)
+clean_db_services() {
+    log_warning "개발 환경 볼륨을 모두 삭제합니다 (되돌릴 수 없습니다)"
+    log_warning "대상: postgres-data-dev, redis_data_dev, minio_data_dev, neo4j-data-dev, qdrant_data_dev, milvus_data_dev, jaeger_data_dev, docreader-tmp-dev"
+
+    check_docker
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+    "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD -f docker-compose.dev.yml --profile full down -v --remove-orphans
+
+    if [ $? -eq 0 ]; then
+        log_success "개발 환경 볼륨이 모두 삭제되었습니다"
+        log_info "다음 단계: make dev-start 로 재기동하면 DB 마이그레이션이 처음부터 재적용됩니다"
+        return 0
+    else
+        log_error "볼륨 삭제 실패"
         return 1
     fi
 }
@@ -348,6 +374,9 @@ case "$CMD" in
         ;;
     frontend)
         start_frontend
+        ;;
+    clean-db)
+        clean_db_services
         ;;
     help|--help|-h)
         show_help
