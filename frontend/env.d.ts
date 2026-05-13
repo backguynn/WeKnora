@@ -4,3 +4,22 @@
 declare module '*.vue' {
     import { Component } from 'vue'; const component: Component; export default component;
 }
+
+declare module 'marked-katex-extension' {
+    interface MarkedKatexOptions {
+        throwOnError?: boolean;
+        nonStandard?: boolean;
+    }
+
+    const markedKatex: (options?: MarkedKatexOptions) => any;
+    export default markedKatex;
+}
+
+declare module 'vue-virtual-scroller' {
+    import type { DefineComponent, Plugin } from 'vue';
+
+    export const RecycleScroller: DefineComponent<any, any, any>;
+
+    const VueVirtualScroller: Plugin;
+    export default VueVirtualScroller;
+}

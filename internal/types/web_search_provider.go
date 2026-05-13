@@ -3,6 +3,7 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/utils"
@@ -20,6 +21,7 @@ const (
 	WebSearchProviderTypeTavily     WebSearchProviderType = "tavily"
 	WebSearchProviderTypeOllama     WebSearchProviderType = "ollama"
 	WebSearchProviderTypeBaidu      WebSearchProviderType = "baidu"
+	WebSearchProviderTypeSearxng    WebSearchProviderType = "searxng"
 )
 
 // WebSearchProviderEntity represents a configured web search provider instance for a tenant.
@@ -70,6 +72,9 @@ type WebSearchProviderParameters struct {
 	APIKey string `yaml:"api_key" json:"api_key,omitempty"`
 	// Google Custom Search Engine ID (only for Google provider)
 	EngineID string `yaml:"engine_id" json:"engine_id,omitempty"`
+	// Base URL for self-hosted search engines (e.g. SearXNG instance URL).
+	// Validated with utils.ValidateURLForSSRF; private hosts must be added to SSRF_WHITELIST.
+	BaseURL string `yaml:"base_url" json:"base_url,omitempty"`
 	// Optional HTTP/HTTPS proxy URL for outbound search requests (e.g. http://host:port); validated with utils.ValidateURLForSSRF.
 	// Does not replace the search API endpoint; only tunnels traffic to the official APIs.
 	ProxyURL string `yaml:"proxy_url" json:"proxy_url,omitempty"`
@@ -101,11 +106,11 @@ func (p *WebSearchProviderParameters) Scan(value interface{}) error {
 	if err := json.Unmarshal(b, p); err != nil {
 		return err
 	}
-	if key := utils.GetAESKey(); key != nil && p.APIKey != "" {
-		if decrypted, err := utils.DecryptAESGCM(p.APIKey, key); err == nil {
-			p.APIKey = decrypted
-		}
+	apiKey, err := utils.DecryptStoredSecret(p.APIKey)
+	if err != nil {
+		return fmt.Errorf("decrypt web search provider api_key: %w", err)
 	}
+	p.APIKey = apiKey
 	return nil
 }
 
@@ -120,6 +125,8 @@ type WebSearchProviderTypeInfo struct {
 	RequiresAPIKey bool `json:"requires_api_key"`
 	// Whether the provider requires an engine ID (e.g., Google CSE)
 	RequiresEngineID bool `json:"requires_engine_id"`
+	// Whether the provider requires a user-supplied base URL (e.g., self-hosted SearXNG instance)
+	RequiresBaseURL bool `json:"requires_base_url"`
 	// Whether optional proxy_url in parameters is honored for outbound requests
 	SupportsProxy bool `json:"supports_proxy"`
 	// Description
@@ -170,6 +177,15 @@ func GetWebSearchProviderTypes() []WebSearchProviderTypeInfo {
 			RequiresAPIKey: true,
 			Description:    "Ollama Cloud web search (requires Ollama API key)",
 			DocsURL:        "https://docs.ollama.com/capabilities/web-search",
+		},
+		{
+			ID:              "searxng",
+			Name:            "SearXNG",
+			RequiresAPIKey:  false,
+			RequiresBaseURL: true,
+			SupportsProxy:   true,
+			Description:     "Self-hosted SearXNG metasearch instance (provide instance URL; private hosts must be SSRF-whitelisted)",
+			DocsURL:         "https://docs.searxng.org/",
 		},
 		{
 			ID:             "baidu",

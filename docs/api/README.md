@@ -59,7 +59,7 @@ WeKnora API는 기능별로 다음과 같이 분류됩니다:
 
 | 분류 | 설명 | 문서 링크 |
 |------|------|----------|
-| 인증 관리 | 사용자 등록, 로그인, 토큰 관리 | [auth.md](./auth.md) |
+| 인증 관리 | 사용자 등록, 로그인, 토큰 관리 | [OIDC认证调用流程.md](../OIDC认证调用流程.md) |
 | 테넌트 관리 | 테넌트 계정 생성 및 관리 | [tenant.md](./tenant.md) |
 | 지식베이스 관리 | 지식베이스 생성, 조회, 관리 | [knowledge-base.md](./knowledge-base.md) |
 | 지식 관리 | 지식 콘텐츠 업로드, 검색, 관리 | [knowledge.md](./knowledge.md) |

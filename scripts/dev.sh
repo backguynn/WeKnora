@@ -322,7 +322,7 @@ start_app() {
         log_warning "팁: Air를 설치하면 코드 수정 후 자동 재시작이 가능합니다"
         log_info "설치 명령: go install github.com/air-verse/air@latest"
         LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
-        go run -ldflags="$LDFLAGS" ./cmd/server/
+        go run -ldflags="$LDFLAGS" ./cmd/server
     fi
 }
 

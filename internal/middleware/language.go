@@ -13,7 +13,7 @@ import (
 // Priority (highest to lowest):
 //  1. WEKNORA_LANGUAGE environment variable (deployment-level override for document processing language)
 //  2. Accept-Language HTTP header (first tag, e.g. "zh-CN,zh;q=0.9" → "zh-CN")
-//  3. "zh-CN" hardcoded fallback
+//  3. Application default locale fallback
 //
 // WEKNORA_LANGUAGE takes precedence over Accept-Language because the UI locale (menu language)
 // and the document processing language (question/summary generation) are separate concerns.
@@ -39,9 +39,9 @@ func Language() gin.HandlerFunc {
 			lang = parseFirstLanguageTag(acceptLang)
 		}
 
-		// 3. Fallback to hardcoded default
+		// 3. Fall back to the application default locale
 		if lang == "" {
-			lang = "zh-CN"
+			lang = types.DefaultLanguage()
 		}
 
 		// Inject into context

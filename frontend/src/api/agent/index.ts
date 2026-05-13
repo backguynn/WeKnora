@@ -1,12 +1,22 @@
 import { get, post, put, del } from "../../utils/request";
 
-// 智能体配置
+// 에이전트 설정
+// 스마트 추론 모드에서 사용하는 에이전트 유형 프리셋 ID
+// 'rag-qa'           : 고전적인 문서/FAQ 청크 RAG
+// 'wiki-qa'          : Wiki 그래프 탐색형 질의응답
+// 'hybrid-rag-wiki'  : Wiki + 청크 혼합 검색
+// 'custom'           : 완전 사용자 정의(프리셋 미적용)
+export type AgentType = 'rag-qa' | 'wiki-qa' | 'hybrid-rag-wiki' | 'data-analysis' | 'custom';
+
 export interface CustomAgentConfig {
-  // ===== 基础设置 =====
-  agent_mode?: 'quick-answer' | 'smart-reasoning';  // 运行模式：quick-answer=RAG模式, smart-reasoning=ReAct Agent模式
-  system_prompt?: string;           // 统一系统提示词（使用 {{web_search_status}} 占位符动态控制行为）
-  system_prompt_id?: string;
-  context_template?: string;        // 上下文模板（普通模式）
+  // ===== 기본 설정 =====
+  agent_mode?: 'quick-answer' | 'smart-reasoning';  // 실행 모드: quick-answer=RAG 모드, smart-reasoning=ReAct Agent 모드
+  // 스마트 추론 모드의 유형 프리셋. 시스템 프롬프트 + 도구 + KB 호환성 조합을 한 번에 적용합니다.
+  // agent_mode === 'smart-reasoning' 일 때만 사용되며 quick-answer 모드에서는 무시됩니다.
+  agent_type?: AgentType;
+  system_prompt?: string;           // 통합 시스템 프롬프트({{web_search_status}} 플레이스홀더로 동작 제어)
+  system_prompt_id?: string;        // 참조하는 prompt template ID(프리셋이 자동으로 채움)
+  context_template?: string;        // 컨텍스트 템플릿(일반 모드)
   context_template_id?: string;
 
   // ===== 模型设置 =====
@@ -14,15 +24,16 @@ export interface CustomAgentConfig {
   rerank_model_id?: string;         // ReRank 模型 ID
   temperature?: number;
   max_completion_tokens?: number;   // 最大生成token数（普通模式）
+  thinking?: boolean;                      // 是否启用思考模式（支持扩展思考的模型）
 
-  // ===== Agent模式设置 =====
-  max_iterations?: number;          // 最大迭代次数
-  llm_call_timeout?: number;
-  allowed_tools?: string[];         // 允许的工具
-  reflection_enabled?: boolean;     // 是否启用反思
-  // MCP服务选择模式：all=全部启用的MCP服务, selected=指定服务, none=不使用MCP
+  // ===== Agent 모드 설정 =====
+  max_iterations?: number;          // 최대 반복 횟수
+  llm_call_timeout?: number;        // LLM 호출 타임아웃(초)
+  allowed_tools?: string[];         // 허용된 도구
+  reflection_enabled?: boolean;     // 반성 기능 사용 여부
+  // MCP 서비스 선택 모드: all=전체 활성화된 MCP 서비스, selected=지정 서비스, none=사용 안 함
   mcp_selection_mode?: 'all' | 'selected' | 'none';
-  mcp_services?: string[];          // 选择的MCP服务ID列表
+  mcp_services?: string[];          // 선택한 MCP 서비스 ID 목록
 
   // ===== Skills设置（仅Agent模式）=====
   // Skills选择模式：all=全部预装, selected=指定, none=不使用
@@ -189,6 +200,54 @@ export function getPlaceholders() {
   return get<{ data: PlaceholdersResponse }>('/api/v1/agents/placeholders');
 }
 
+// ===== 智能体类型预设 =====
+
+// 后端 kb_filter 结构（见 internal/types/agent_type_preset.go）
+export interface AgentTypeKBFilter {
+  any_of?: string[];   // KB 至少拥有其一
+  all_of?: string[];   // KB 必须全部拥有
+  none_of?: string[];  // KB 必须全部不拥有
+}
+
+// KB 能力标签（后端 types.KBCapabilities 的 JSON）
+export interface KBCapabilities {
+  vector: boolean;
+  keyword: boolean;
+  wiki: boolean;
+  graph: boolean;
+  faq: boolean;
+}
+
+// 预设的"自动填充"配置载荷：仅包含被预设覆盖的字段；其他字段不动
+export interface AgentTypePresetConfig {
+  system_prompt_id?: string;
+  temperature?: number;
+  max_iterations?: number;
+  allowed_tools?: string[];
+  retain_retrieval_history?: boolean;
+  faq_priority_enabled?: boolean;
+  web_search_enabled?: boolean;
+  supported_file_types?: string[];
+  kb_selection_mode?: 'all' | 'selected' | 'none';
+}
+
+export interface AgentTypePresetI18n {
+  label: string;
+  description: string;
+}
+
+export interface AgentTypePreset {
+  id: AgentType;
+  i18n: Record<string, AgentTypePresetI18n>;
+  config?: AgentTypePresetConfig;     // 为空表示"自定义"类型（无预设）
+  kb_filter?: AgentTypeKBFilter;      // 为空表示所有 KB 可选
+}
+
+// 拉取类型预设列表（编辑器用）
+export function getAgentTypePresets() {
+  return get<{ data: AgentTypePreset[] }>('/api/v1/agents/type-presets');
+}
+
 // ===== IM渠道 =====
 
 export interface IMChannel {
@@ -209,6 +268,28 @@ export interface IMChannel {
 
 export function listIMChannels(agentId: string) {
   return get<{ data: IMChannel[] }>(`/api/v1/agents/${agentId}/im-channels`);
+}
+
+// Tenant-wide overview row. Credentials are intentionally omitted — use
+// listIMChannels(agentId) when you need to edit a specific channel.
+export interface IMChannelOverview {
+  id: string;
+  tenant_id: number;
+  agent_id: string;
+  agent_name: string; // empty string for built-in agents
+  platform: IMChannel['platform'];
+  name: string;
+  enabled: boolean;
+  mode: IMChannel['mode'];
+  output_mode: IMChannel['output_mode'];
+  session_mode?: IMChannel['session_mode'];
+  bot_identity: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listAllIMChannels() {
+  return get<{ data: IMChannelOverview[] }>('/api/v1/im-channels');
 }
 
 export function createIMChannel(agentId: string, data: Partial<IMChannel>) {
@@ -232,7 +313,7 @@ export function toggleIMChannel(id: string) {
 // 推荐问题
 export interface SuggestedQuestion {
   question: string;
-  source: 'faq' | 'document' | 'agent_config';
+  source: 'faq' | 'document' | 'agent_config' | 'wiki';
   knowledge_base_id?: string;
 }
 

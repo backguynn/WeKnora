@@ -20,7 +20,7 @@
   var t=localStorage.getItem('WeKnora_theme')||'light';
   if(t==='system')t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
   document.documentElement.setAttribute('theme-mode',t);
-  /* 与 theme.css 中 --td-bg-color-page 一致，避免样式加载后整页背景从 #fff 跳到 #eee 触发重绘闪动 */
+  /* theme.css의 --td-bg-color-page와 맞춰, 스타일 로드 후 전체 배경이 #fff에서 #eee로 바뀌며 깜빡이는 현상을 막습니다. */
   var bg=t==='dark'?'#181818':'#eee';
   document.documentElement.style.background=bg;
   document.documentElement.style.minHeight='100%';
@@ -57,6 +57,13 @@
 })();
 </script>
 <script src="/config.js"></script>
+<!--
+  오프라인 배포 호환성: tdesign-icons SVG sprite를 미리 로컬에서 로드해
+  tdesign-vue-next의 <t-icon>이 런타임에 https://tdesign.gtimg.com 으로 요청하지 않도록 합니다.
+  자세한 배경은 issue #867 / #897 을 참고하세요.
+  tdesign-icons-vue-next를 업그레이드할 때는 public/tdesign-icons/<version>/fonts/index.js도 함께 갱신해야 합니다.
+-->
+<script src="/tdesign-icons/0.4.1/fonts/index.js"></script>
 <div id="app"></div>
 <script>
 (function(){

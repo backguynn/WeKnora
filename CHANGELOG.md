@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🚀 New Features
+- **NEW**: Adaptive 3-tier chunking — documents are now profiled before splitting and routed to one of three strategies: heading-aware (Markdown structure), heuristic (form-feeds, multilingual chapter markers DE/EN/ZH, all-caps titles, visual separators), or recursive (the modernized legacy splitter as a fallback). Auto-strategy is the new default for fresh KBs; existing KBs keep their previous behavior until the user opts in. See `docs/CHUNKING.md`.
+- **NEW**: KB editor — chunking settings panel surfaces the new strategy selector (Automatic / Markdown-optimized / Smart structure detection / Classic) plus advanced options for token limit per chunk and language hints. Sharper inline help text on every setting explains when defaults apply and when to tune.
+- **NEW**: Chunking debug panel — embedded "Test with sample text" panel under the chunking settings. Paste a snippet, hit Run preview, see selected tier, rejected tiers + reasons, document profile, size distribution stats over the full chunk set, and per-chunk cards with breadcrumb + content preview. Read-only, no DB or embedding side effects, 5-second server-side timeout.
+- **NEW**: `POST /api/v1/chunker/preview` endpoint backing the debug panel. Returns `selected_tier`, `tier_chain`, `rejected[]`, `profile`, `chunks[]`, and `stats`. Capped at 64k input runes / 500 chunks per response.
+- **NEW**: Per-tenant RRF (Reciprocal Rank Fusion) tuning — `RRFK`, `RRFVectorWeight`, `RRFKeywordWeight` are now configurable on the tenant `RetrievalConfig`. Defaults preserve the previous hardcoded behavior (k=60, weights 0.7/0.3).
+
+### ⚡ Improvements
+- **IMPROVED**: Chunker recursive priority — `splitBySeparators` now genuinely walks separators by priority and recursively re-splits oversize sub-pieces with the next-priority separator. Mirrors the Python reference. Without this fix, a "one paragraph break followed by a long run of newline-separated lines" pattern could emit ~1900-rune chunks at chunkSize=300.
+- **IMPROVED**: ChunkOverlap default consolidated to 80 (~15% of ChunkSize). Previously the Go DefaultConfig used 64, the knowledge service used 50, the Python docreader used 100, and the frontend form initialised to 100. All paths now align.
+- **IMPROVED**: ContextHeader (Markdown breadcrumb) lives on `Chunk.ContextHeader`, separate from `Chunk.Content`. Restores the `End-Start == len(Content)` invariant that the document-reconstruction path in `knowledge.go` relies on for summary generation and UI highlighting. Eliminates a duplicate-heading regression where the section heading appeared twice in a chunk's body.
+- **IMPROVED**: Embedding pipeline — exponential backoff (200/400/800/1600/3200 ms) replaces the previous fixed 100ms × 5 retry loop, with context-cancellation between attempts. `sanitizeForEmbedding` caps single embedding inputs at 20k runes with a warning log on overflow.
+- **IMPROVED**: SplitParentChild forces children onto the recursive tier, skipping per-parent profile passes (previously paid N extra O(N) document scans).
+- **IMPROVED**: Heuristic splitter snaps overlap start to the nearest semantic boundary or newline instead of slicing mid-line / mid-word.
+- **IMPROVED**: Validator flow — when every tier is rejected, the chain returns the legacy tier's output directly instead of running SplitText a second time.
+- **IMPROVED**: Token limit per chunk — when set, ChunkSize is auto-clamped to a per-language character budget (with a 10% safety factor). Prevents overshooting embedding model token caps on CJK content where 1 char ≈ 0.6 tokens.
+- **IMPROVED**: KB-config API — `strategy`, `tokenLimit`, `languages` use pointer DTOs server-side so a payload omitting a field means "no change" while an explicit empty / 0 / [] resets to default. Previously these were write-once fields.
+
+### 🐛 Bug Fixes
+- **FIXED**: Chunker — `Chunk.Start` / `End` rune-offset invariant restored after the heading-aware splitter started prepending breadcrumbs to content (regression introduced during the initial Tier-1 work, fixed before any release).
+- **FIXED**: Heuristic splitter — `applyOverlap` aligns to boundaries instead of doing blind char-subtraction that could leave chunks starting mid-word in CJK text.
+- **FIXED**: Preview endpoint — chunk-size statistics are now computed over the FULL chunk set before truncating the response payload to 500 entries. Previously `avg`/`min`/`max`/`stddev` reflected only the first 500 chunks of a larger split.
+- **FIXED**: Preview endpoint — empty / whitespace-only sample text now returns a friendly 400 ("paste a sample…") instead of gin's cryptic `Field validation failed` error.
+- **FIXED**: Frontend chunking debug panel — added explicit `type="button"`, prominent loading and error states, and console error logging so failed previews are debuggable from DevTools without enabling verbose logging. Earlier the panel could appear to "vanish" silently when a request failed.
+- **FIXED**: KB-editor i18n — `chunkOverlap` initial form value aligned with the backend default (80, not 100); description texts on every chunking setting now state the recommended ranges per use-case.
+
+### 📚 Documentation
+- **DOC**: New `docs/CHUNKING.md` — strategy explanations, settings reference with use-case presets, token-limit guide per embedding model, debugging workflow, and known trade-offs.
+
+## [0.5.1] - 2026-04-30
+
+### 🚀 New Features
+- **NEW**: WeChat Mini Program — added a lightweight mobile client (`miniprogram/`) for configuring WeKnora API access, selecting knowledge bases, importing URLs, and chatting from inside WeChat, extending WeKnora from desktop to mobile.
+- **NEW**: Knowledge Base — document list view with multi-select, floating batch action bar, and batch delete to streamline managing large knowledge bases.
+- **NEW**: IM — tenant-wide IM Channels Overview entry under the user menu so administrators can inspect every IM channel of the tenant from a single page.
+- **NEW**: Sessions — keyword search across the conversation list, user-scoped pinning of important sessions, and clear IM-source visibility for chats originating from IM channels.
+- **NEW**: Frontend — unified Model / Web Search / MCP settings pages onto a shared card + drawer pattern with consistent layouts and reusable confirm-delete behavior.
+- **NEW**: IM channel form — switched from dialog to drawer UX, channel list moved from vertical layout to responsive grid cards with dropdown action menu, platform radio replaced with a select dropdown.
+- **NEW**: Tenant — exposed API Key reset from the API Info page; create/reset returns plaintext key once.
+- **NEW**: Storage — `STORAGE_ALLOW_LIST` env var to whitelist external storage hosts during URL rewriting / serving.
+- **NEW**: Agent — configurable per-agent LLM call timeout from the agent editor frontend.
+- **NEW**: Desktop client — added tenant switching support.
+- **NEW**: Frontend — markdown test page under dev tools for previewing rendering behavior.
+
+### ⚡ Improvements
+- **IMPROVED**: Agent — `data_analysis` tool gained SQL validation and stricter type processing.
+- **IMPROVED**: Agent — broad queries fall back to a knowledge-base document listing for better coverage (#959).
+- **IMPROVED**: Wiki ingest — failed operations are now requeued, and sync task retry behavior is aligned across regular and Lite modes.
+- **IMPROVED**: Wiki ingest (Lite) — added ingest lock to prevent concurrent execution issues.
+- **IMPROVED**: Search — `RetrieverEngines.Scan` enhanced to support both legacy and current data formats.
+- **IMPROVED**: i18n — aligned `en-US`, `ko-KR`, `ru-RU` locales with `zh-CN` as the source of truth.
+- **IMPROVED**: Helm — preserve `SYSTEM_AES_KEY` / `TENANT_AES_KEY` across upgrades to avoid breaking existing encrypted data.
+- **IMPROVED**: IM — secure private storage URL handling with HTTP rewriting in IM replies, presigned URL TTL shortening, and tenant ID preference from context.
+- **IMPROVED**: Docs — README tracing references updated from Jaeger to Langfuse across all language variants; Agent Mode and Observability sections were polished.
+
+### 🐛 Bug Fixes
+- **FIXED**: Frontend — LaTeX formulas flashing and disappearing during streaming responses (#1056).
+- **FIXED**: Docreader — removed default 100-page DOCX parsing limit.
+- **FIXED**: IM — removed pipeline-level timeout that killed multi-round agent reasoning.
+- **FIXED**: IM — sessions now isolated per agent and recover gracefully from deleted sessions.
+- **FIXED**: Search — aligned rerank priority between `Execute` and `rerankResults`.
+- **FIXED**: Container — aggregated registration errors in connector registry initialization for clearer startup diagnostics.
+- **FIXED**: Crypto — fail loudly when encrypted DB fields cannot be decrypted instead of returning empty data.
+- **FIXED**: Web search — normalized default tenant web search config at runtime.
+- **FIXED**: Wiki ingest — silent data loss caused by malformed JSON in the Redis queue.
+- **FIXED**: Tenant — return plaintext API key after create/reset for safe distribution.
+- **FIXED**: Frontend — chat drag-and-drop uploads routed correctly to the right pipeline.
+- **FIXED**: Frontend — hidden card checkbox when not in selection mode.
+- **FIXED**: Frontend — knowledge list sticky header and floating batch bar polish.
+- **FIXED**: Frontend — knowledge document list layout, batch bar, and selection behavior.
+- **FIXED**: Frontend — restored hover feedback on selected list rows.
+- **FIXED**: Frontend — keep chat input visible when conversation overflows the viewport.
+- **FIXED**: Mini program — improved knowledge base selection flow.
+- **FIXED**: Document parser — preserve standalone image uploads from the icon filter.
+- **FIXED**: Knowledge — fixed attachment document failure handling.
+
+### 🔧 Refactoring
+- **REFACTOR**: IM — moved adapter factories into per-platform subpackages (`feishu/`, `wechat/`, `wecom/`, `slack/`, `telegram/`, `dingtalk/`, `mattermost/`) for cleaner package boundaries.
+
+## [0.5.0] - 2026-04-27
+
+### 🚀 New Features
+- **NEW**: Wiki Mode — a brand-new agent-driven Wiki knowledge system that automatically distills raw documents into interlinked markdown pages. It ships with a dedicated WikiBrowser, an interactive knowledge graph visualizing references and relationships between pages, and specialized agent tools, empowering teams to grow a structured, continuously evolving knowledge base from their own materials.
+- **NEW**: Observability — integrated Langfuse for agent ReAct loop, LLM token tracking, tool calls, and asynq pipeline tracing, providing deep visibility into agent reasoning, tool execution, and system performance.
+- **NEW**: Customizable Indexing Strategy — users can now independently toggle Vector Search, Keyword Search, Wiki, and Knowledge Graph indexing on a per-knowledge-base level.
+- **NEW**: Vector Store UI & Per-KB Binding — full frontend management interface for Vector Stores, allowing users to configure connections, test connectivity, and assign specific vector stores to different knowledge bases.
+- **NEW**: Yuque Connector — Yuque data source integration with API client, full and incremental fetch, and resource mapping, enabling seamless synchronization of Yuque documents into the knowledge base.
+- **NEW**: Built-in Agent Skills — added a preloaded `OpenMAIC Classroom` agent skill.
+- **NEW**: Agent Tools — added `json_repair` tool for agents to automatically fix and parse malformed JSON outputs.
+- **NEW**: Frontend — added copy action for model cards in settings.
+- **NEW**: Agent — added support to load all sheets from Excel files for DuckDB data analysis.
+
+### ⚡ Improvements
+- **IMPROVED**: Agent — improved tenant context handling and error reporting.
+- **IMPROVED**: Agent — updated synthesis and issue flagging instructions in system prompt.
+- **IMPROVED**: Debugging — enhanced LLM request logging and debug output (`llm_debug`) across all model providers.
+
+### 🐛 Bug Fixes
+- **FIXED**: Agent — materialized knowledge files to temp path for DuckDB to fix access issues
+- **FIXED**: Agent — removed rerank model requirement for wiki-only agents
+- **FIXED**: Docreader — whitelisted offline protoc zip packages in dockerignore
+- **FIXED**: System — changed hardcoded version to `*` comparison for new Linux version compatibility
+- **FIXED**: Setup — added output if offline protoc install package already exists
+
 ## [0.4.0] - 2026-04-14
 
 ### 🚀 New Features
@@ -897,6 +1003,8 @@ All notable changes to this project will be documented in this file.
 - Docker Compose for quick startup and service orchestration.
 - MCP server support for integrating with MCP-compatible clients.
 
+[0.5.0]: https://github.com/Tencent/WeKnora/tree/v0.5.0
+[0.4.0]: https://github.com/Tencent/WeKnora/tree/v0.4.0
 [0.3.6]: https://github.com/Tencent/WeKnora/tree/v0.3.6
 [0.3.5]: https://github.com/Tencent/WeKnora/tree/v0.3.5
 [0.3.4]: https://github.com/Tencent/WeKnora/tree/v0.3.4

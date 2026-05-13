@@ -65,13 +65,28 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME:-}
       - TZ=${TZ:-Asia/Shanghai}
-      - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-zh-CN}
+      - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-ko-KR}
       - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
       - OTEL_SERVICE_NAME=WeKnora
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
       - OTEL_LOGS_EXPORTER=none
       - OTEL_PROPAGATORS=tracecontext,baggage
+      # ========== Langfuse (optional observability) ==========
+      # Enabled automatically when LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY are set.
+      # 전체 튜닝 항목은 docs 아래의 Langfuse 통합 문서를 참고하세요.
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_RELEASE=${LANGFUSE_RELEASE:-}
+      - LANGFUSE_ENVIRONMENT=${LANGFUSE_ENVIRONMENT:-}
+      - LANGFUSE_FLUSH_AT=${LANGFUSE_FLUSH_AT:-}
+      - LANGFUSE_FLUSH_INTERVAL=${LANGFUSE_FLUSH_INTERVAL:-}
+      - LANGFUSE_QUEUE_SIZE=${LANGFUSE_QUEUE_SIZE:-}
+      - LANGFUSE_REQUEST_TIMEOUT=${LANGFUSE_REQUEST_TIMEOUT:-}
+      - LANGFUSE_SAMPLE_RATE=${LANGFUSE_SAMPLE_RATE:-}
+      - LANGFUSE_DEBUG=${LANGFUSE_DEBUG:-}
       - RETRIEVE_DRIVER=${RETRIEVE_DRIVER:-}
       - ELASTICSEARCH_ADDR=${ELASTICSEARCH_ADDR:-}
       - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-}
@@ -92,6 +107,12 @@ services:
       - WEAVIATE_SCHEME=${WEAVIATE_SCHEME:-http}
       - WEAVIATE_AUTH_ENABLED=${WEAVIATE_AUTH_ENABLED:-false}
       - WEAVIATE_API_KEY=${WEAVIATE_API_KEY:-}
+      - DORIS_ADDR=${DORIS_ADDR:-doris-fe:9030}
+      - DORIS_HTTP_PORT=${DORIS_HTTP_PORT:-8030}
+      - DORIS_DATABASE=${DORIS_DATABASE:-weknora}
+      - DORIS_USERNAME=${DORIS_USERNAME:-root}
+      - DORIS_PASSWORD=${DORIS_PASSWORD:-}
+      - DORIS_TABLE_PREFIX=${DORIS_TABLE_PREFIX:-weknora_embeddings}
       - STORAGE_TYPE=${STORAGE_TYPE:-}
       - LOCAL_STORAGE_BASE_DIR=${LOCAL_STORAGE_BASE_DIR:-}
       - AUTO_RECOVER_DIRTY=${AUTO_RECOVER_DIRTY:-true}
@@ -114,11 +135,15 @@ services:
       - TENANT_AES_KEY=${TENANT_AES_KEY:-}
       - SYSTEM_AES_KEY=${SYSTEM_AES_KEY:-}
       - SSRF_WHITELIST=${SSRF_WHITELIST:-}
+      # Always allow the optional searxng sidecar (compose service hostname);
+      # merged on top of SSRF_WHITELIST so user overrides don't clobber it.
+      - SSRF_WHITELIST_EXTRA=${SSRF_WHITELIST_EXTRA:-searxng}
       - CONCURRENCY_POOL_SIZE=${CONCURRENCY_POOL_SIZE:-5}
       - JWT_SECRET=${JWT_SECRET:-}
-      # Crypto: 主密钥和盐值，用于 AppSecret 等敏感字段的 AES-256 加密
-      # 若不设置则自动生成并持久化到 data-files volume（/data/files/.crypto_state.json）
-      # 重启时自动从文件恢复，保证已加密数据可继续解密
+      # Crypto: AppSecret 등 민감 필드를 AES-256으로 암호화할 때 사용하는
+      # 주 마스터 키와 salt 값입니다.
+      # 비워두면 자동 생성되어 data-files volume(/data/files/.crypto_state.json)에 저장되고,
+      # 재시작 시 파일에서 자동 복원되어 기존 암호화 데이터를 계속 복호화할 수 있습니다.
       - CRYPTO_MASTER_KEY=${CRYPTO_MASTER_KEY:-}
       - CRYPTO_SALT=${CRYPTO_SALT:-}
       # File size limit (in MB)
@@ -129,6 +154,7 @@ services:
       - WEKNORA_SANDBOX_DOCKER_IMAGE=${WEKNORA_SANDBOX_DOCKER_IMAGE:-wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}}
       # Agent LLM call timeout
       - WEKNORA_AGENT_LLM_TIMEOUT=${WEKNORA_AGENT_LLM_TIMEOUT:-}
+      - WEKNORA_AGENT_TOOL_APPROVAL_TIMEOUT=${WEKNORA_AGENT_TOOL_APPROVAL_TIMEOUT:-}
       - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
     depends_on:
       redis:
@@ -170,6 +196,10 @@ services:
     environment:
       - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
+      - DOCREADER_MARKITDOWN_MAX_WORKERS=${DOCREADER_MARKITDOWN_MAX_WORKERS:-1}
+      - DOCREADER_PDF_RENDER_MAX_WORKERS=${DOCREADER_PDF_RENDER_MAX_WORKERS:-1}
+      - DOCREADER_PDF_RENDER_DPI=${DOCREADER_PDF_RENDER_DPI:-200}
+      - DOCREADER_PDF_JPEG_QUALITY=${DOCREADER_PDF_JPEG_QUALITY:-90}
     healthcheck:
       test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
       interval: 30s
@@ -211,6 +241,58 @@ services:
     restart: always
     networks:
       - WeKnora-network
+
+  # One-shot init: copy the read-only template settings.yml into a named volume
+  # before searxng starts. Necessary because the searxng entrypoint sed-replaces
+  # `ultrasecretkey` in /etc/searxng/settings.yml in place; bind-mounting the
+  # repo file directly would write the resolved SEARXNG_SECRET back into the
+  # working tree (and prevent re-templating on subsequent restarts).
+  searxng-init:
+    image: busybox:1.36
+    container_name: WeKnora-searxng-init
+    command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
+    volumes:
+      - ./docker/searxng/settings.yml:/template/settings.yml:ro
+      - searxng_config:/etc/searxng
+    restart: "no"
+    networks:
+      - WeKnora-network
+    profiles:
+      - searxng
+      - full
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: WeKnora-searxng
+    # Bind to loopback by default; override SEARXNG_BIND=0.0.0.0 only after
+    # rotating SEARXNG_SECRET and (optionally) re-enabling limiter in settings.yml.
+    ports:
+      - "${SEARXNG_BIND:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - searxng_config:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:${SEARXNG_PORT:-8888}/
+      - INSTANCE_NAME=weknora-searxng
+      # Default value lets `docker compose --profile searxng up` work zero-config.
+      # Override via .env (e.g. `openssl rand -hex 32`) before exposing the
+      # instance beyond the default 127.0.0.1 bind, since secret_key signs
+      # image-proxy URLs and a shared default would be guessable by anyone.
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-weknora-default-searxng-secret-rotate-before-exposing-publicly}
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    restart: unless-stopped
+    depends_on:
+      searxng-init:
+        condition: service_completed_successfully
+    networks:
+      - WeKnora-network
+    profiles:
+      - searxng
+      - full
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -347,6 +429,62 @@ services:
     profiles:
       - weaviate
 
+  # ---------------------------------------------------------------------------
+  # Apache Doris 4.1(FE + BE 단일 인스턴스 standalone 배포, `--profile doris` 로 opt-in)
+  #
+  # 버전 요구 사항: 반드시 3.0 이상이어야 합니다.
+  # (HNSW ANN 인덱스, cosine_distance_approximate, Stream Load partial_columns 필요)
+  # 이 compose는 4.1 공식 안정 태그를 사용합니다.
+  #
+  # 포트 설명:
+  #   - 9030 (FE MySQL): WeKnora의 주 읽기/쓰기 경로와 SQL 질의에 사용
+  #   - 8030 (FE HTTP): Stream Load partial update 진입점
+  #   - 8040 (BE)     : BE heartbeat 및 데이터 전송용. FE는 stream load를 BE로 리다이렉트함
+  #
+  # 활성화:
+  #   docker compose --profile doris up -d
+  #
+  # 데이터는 doris_fe_data / doris_be_data 볼륨에 영속화됩니다.
+  # ---------------------------------------------------------------------------
+  doris-fe:
+    image: apache/doris:fe-4.1.0
+    container_name: WeKnora-doris-fe
+    hostname: doris-fe
+    environment:
+      - FE_SERVERS=fe1:doris-fe:9010
+      - FE_ID=1
+    ports:
+      - "${DORIS_FE_HTTP_PORT:-8030}:8030"
+      - "${DORIS_FE_MYSQL_PORT:-9030}:9030"
+    volumes:
+      - doris_fe_meta:/opt/apache-doris/fe/doris-meta
+      - doris_fe_log:/opt/apache-doris/fe/log
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+    profiles:
+      - doris
+
+  doris-be:
+    image: apache/doris:be-4.1.0
+    container_name: WeKnora-doris-be
+    hostname: doris-be
+    environment:
+      - FE_SERVERS=fe1:doris-fe:9010
+      - BE_ADDR=doris-be:9050
+    depends_on:
+      - doris-fe
+    ports:
+      - "${DORIS_BE_HTTP_PORT:-8040}:8040"
+    volumes:
+      - doris_be_storage:/opt/apache-doris/be/storage
+      - doris_be_log:/opt/apache-doris/be/log
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+    profiles:
+      - doris
+
   dex:
     image: dexidp/dex:latest
     container_name: dex
@@ -357,6 +495,229 @@ services:
     command: ["dex", "serve", "/etc/dex/config.yaml"]
     profiles:
       - dex
+      - full
+
+  # ---------------------------------------------------------------------------
+  # Langfuse 자체 호스팅 관측성 스택(`--profile langfuse` 로 opt-in)
+  #
+  # 리소스 사용량을 최소화하기 위해 Langfuse는 WeKnora의 기존 postgres와 redis를 재사용합니다.
+  #   - postgres: WeKnora-postgres 안에 독립적인 "langfuse" 데이터베이스 생성
+  #   - redis   : WeKnora-redis의 DB 1 사용(WeKnora 본체는 DB 0 사용)
+  # 추가되는 것은 Langfuse 애플리케이션 + ClickHouse(OLAP) + 전용 MinIO(이벤트/미디어 S3) 뿐입니다.
+  #
+  # 활성화:
+  #   docker compose --profile langfuse up -d
+  # 활성화 후:
+  #   1. Langfuse UI: http://localhost:3000 에 접속해 관리자 계정 생성 후 Settings → API Keys에서 key 발급
+  #   2. .env에서 LANGFUSE_HOST를 http://langfuse-web:3000 으로 변경(컨테이너 간 통신)
+  #      하고, 생성한 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY를 입력
+  #   3. app 컨테이너 재시작: docker compose up -d app
+  # 기본 비밀번호는 모두 placeholder이므로 운영 환경에서는 반드시 openssl rand로 재생성하세요.
+  # ---------------------------------------------------------------------------
+
+  # 1회성 초기화 스크립트: 기존 WeKnora-postgres 안에 langfuse 데이터베이스를 생성합니다.
+  # (멱등 처리되어 이미 존재하면 건너뜁니다)
+  # WeKnora-postgres의 ParadeDB 이미지를 재사용해 postgres 이미지를 추가로 당기지 않습니다.
+  langfuse-db-init:
+    image: paradedb/paradedb:v0.22.2-pg17
+    container_name: WeKnora-langfuse-db-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    # ${LANGFUSE_DB_NAME:-langfuse} / ${DB_USER} 는 compose가 먼저 문자열로 치환한 뒤 shell에 전달합니다.
+    # 스크립트 내부에서 shell이 직접 확장해야 하는 변수는 모두 $$로 이스케이프합니다.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "[langfuse-db-init] ensuring database '${LANGFUSE_DB_NAME:-langfuse}' exists in WeKnora-postgres..."
+        # 먼저 기존 데이터베이스의 collation을 새로 고칩니다.
+        # 이미지 ICU 2.36과 호스트 2.41이 다르면 이 단계가 없을 때 CREATE DATABASE가 실패할 수 있습니다.
+        psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE template1 REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
+        psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=0 -c "ALTER DATABASE postgres REFRESH COLLATION VERSION;" >/dev/null 2>&1 || true
+        # 멱등 생성: 이미 있으면 건너뛰고, 없으면 template0에서 복제합니다.
+        # template0는 collation drift가 생기지 않습니다.
+        if psql -h postgres -U ${DB_USER} -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${LANGFUSE_DB_NAME:-langfuse}'" | grep -q 1; then
+          echo "[langfuse-db-init] database '${LANGFUSE_DB_NAME:-langfuse}' already exists, skipping."
+        else
+          psql -h postgres -U ${DB_USER} -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${LANGFUSE_DB_NAME:-langfuse}\" TEMPLATE template0;"
+          echo "[langfuse-db-init] database '${LANGFUSE_DB_NAME:-langfuse}' created."
+        fi
+        echo "[langfuse-db-init] done."
+    networks:
+      - WeKnora-network
+    restart: "no"
+    profiles:
+      - langfuse
+      - full
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: WeKnora-langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - WeKnora-network
+    profiles:
+      - langfuse
+      - full
+
+  langfuse-minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: WeKnora-langfuse-minio
+    restart: unless-stopped
+    entrypoint: sh
+    # 시작 전에 `langfuse` 버킷을 만들어 Langfuse가 바로 사용할 수 있도록 준비합니다.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-langfuseminio}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
+    ports:
+      # 9100: S3 API. 브라우저가 미디어 업로드 시 이 포트로 직접 연결하므로 외부에 노출되어야 합니다.
+      - "${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
+      # 9101: MinIO 콘솔. 선택 사항이며 문제 분석 시 편리합니다.
+      - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - WeKnora-network
+    profiles:
+      - langfuse
+      - full
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: WeKnora-langfuse-worker
+    restart: unless-stopped
+    depends_on: &langfuse-depends-on
+      # WeKnora의 기존 postgres/redis를 재사용하므로, 먼저 langfuse 데이터베이스 생성이 끝나야 합니다.
+      langfuse-db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    # wrapper entrypoint를 사용해 컨테이너 시작 시 DB_PASSWORD / REDIS_PASSWORD를 URL 인코딩합니다.
+    # 이렇게 하면 DB_PASSWORD에 '@' / '#' 같은 문자가 있어도 Prisma가 DATABASE_URL(P1013)을 정상 파싱할 수 있습니다.
+    # Langfuse 이미지는 Node.js 기반이므로 외부 의존성 없이 node의 encodeURIComponent를 그대로 사용합니다.
+    # 주의: compose에서 entrypoint를 덮어쓰면 이미지 기본 CMD가 비워지므로 wrapper 끝에서 원래 exec 명령을 직접 실행해야 합니다.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        _enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$$1"; }
+        DU=$$(_enc "$$_LF_DB_USER")
+        DP=$$(_enc "$$_LF_DB_PASSWORD")
+        RP=$$(_enc "$$_LF_REDIS_PASSWORD")
+        export DATABASE_URL="postgresql://$$DU:$$DP@postgres:5432/$$_LF_DB_NAME"
+        export REDIS_CONNECTION_STRING="redis://:$$RP@redis:6379/$$_LF_REDIS_DB"
+        unset _LF_DB_USER _LF_DB_PASSWORD _LF_REDIS_PASSWORD
+        exec dumb-init -- ./worker/entrypoint.sh node worker/dist/index.js
+    environment: &langfuse-env
+      # 원본 자격 증명(URL 인코딩 전). entrypoint wrapper가 읽어 DATABASE_URL / REDIS_CONNECTION_STRING으로 조합합니다.
+      _LF_DB_USER: ${DB_USER}
+      _LF_DB_PASSWORD: ${DB_PASSWORD}
+      _LF_DB_NAME: ${LANGFUSE_DB_NAME:-langfuse}
+      _LF_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      _LF_REDIS_DB: ${LANGFUSE_REDIS_DB:-1}
+      # SALT / ENCRYPTION_KEY 는 운영 환경에서 반드시 재생성하세요:
+      #   SALT: openssl rand -base64 32
+      #   ENCRYPTION_KEY: openssl rand -hex 32
+      SALT: ${LANGFUSE_SALT:-weknora-langfuse-dev-salt-change-me}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-weknora-langfuse-dev-nextauth-secret-change-me}
+      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-langfuseminio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-langfuseminio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
+      # 미디어 업로드용 외부 endpoint(브라우저 직결). 기본값은 호스트에 매핑된 9100 포트를 가리킵니다.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT:-http://localhost:9100}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+    networks:
+      - WeKnora-network
+    profiles:
+      - langfuse
+      - full
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: WeKnora-langfuse-web
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    ports:
+      - "${LANGFUSE_WEB_PORT:-3000}:3000"
+    # 동일하게 wrapper entrypoint를 사용하며, 마지막에 web의 원래 시작 명령을 명시합니다.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        _enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$$1"; }
+        DU=$$(_enc "$$_LF_DB_USER")
+        DP=$$(_enc "$$_LF_DB_PASSWORD")
+        RP=$$(_enc "$$_LF_REDIS_PASSWORD")
+        export DATABASE_URL="postgresql://$$DU:$$DP@postgres:5432/$$_LF_DB_NAME"
+        export REDIS_CONNECTION_STRING="redis://:$$RP@redis:6379/$$_LF_REDIS_DB"
+        unset _LF_DB_USER _LF_DB_PASSWORD _LF_REDIS_PASSWORD
+        if [ -n "$$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION" ]; then
+          exec dumb-init -- ./web/entrypoint.sh node --import dd-trace/initialize.mjs ./web/server.js --keepAliveTimeout 110000
+        else
+          exec dumb-init -- ./web/entrypoint.sh node ./web/server.js --keepAliveTimeout 110000
+        fi
+    environment:
+      <<: *langfuse-env
+      # 선택: 최초 기동 시 조직, 프로젝트, 관리자 계정을 자동 생성합니다.
+      # 값을 채우면 UI에서 수동 등록할 필요가 없습니다.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    networks:
+      - WeKnora-network
+    profiles:
+      - langfuse
       - full
 
 networks:
@@ -373,3 +734,11 @@ volumes:
   qdrant_data:
   milvus_data:
   weaviate_data:
+  doris_fe_meta:
+  doris_fe_log:
+  doris_be_storage:
+  doris_be_log:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
+  searxng_config:

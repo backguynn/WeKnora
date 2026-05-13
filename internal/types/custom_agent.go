@@ -22,6 +22,10 @@ const (
 	BuiltinKnowledgeGraphExpertID = "builtin-knowledge-graph-expert"
 	// BuiltinDocumentAssistantID is the ID for the built-in document assistant agent
 	BuiltinDocumentAssistantID = "builtin-document-assistant"
+	// BuiltinWikiResearcherID is the ID for the built-in wiki researcher agent
+	BuiltinWikiResearcherID = "builtin-wiki-researcher"
+	// BuiltinWikiFixerID is the ID for the built-in wiki fixer agent
+	BuiltinWikiFixerID = "builtin-wiki-fixer"
 )
 
 // AgentMode constants for agent running mode
@@ -30,6 +34,27 @@ const (
 	AgentModeQuickAnswer = "quick-answer"
 	// AgentModeSmartReasoning is the ReAct mode for multi-step reasoning
 	AgentModeSmartReasoning = "smart-reasoning"
+)
+
+// AgentType constants for Smart-Reasoning agent presets.
+// These presets bundle a recommended system prompt template,
+// tool allowlist, KB compatibility hint, and other defaults so users
+// don't have to configure everything from scratch.
+// AgentTypeCustom means the user wants full control and we won't
+// auto-fill anything based on the preset.
+const (
+	// AgentTypeRAGQA prefers vector/keyword chunk retrieval on document KBs.
+	AgentTypeRAGQA = "rag-qa"
+	// AgentTypeWikiQA prefers wiki-page navigation on wiki-enabled KBs.
+	AgentTypeWikiQA = "wiki-qa"
+	// AgentTypeHybridRAGWiki orchestrates Wiki + RAG on KBs where both are enabled.
+	AgentTypeHybridRAGWiki = "hybrid-rag-wiki"
+	// AgentTypeDataAnalysis runs SQL / statistics over tabular files (CSV, Excel)
+	// uploaded into the KB. Retrieval semantics (vector/wiki/…) are largely
+	// irrelevant — this type is about data_schema + data_analysis tools.
+	AgentTypeDataAnalysis = "data-analysis"
+	// AgentTypeCustom is the "no preset" option; user-configured end to end.
+	AgentTypeCustom = "custom"
 )
 
 // CustomAgent represents a configurable AI agent (similar to GPTs)
@@ -65,6 +90,12 @@ type CustomAgentConfig struct {
 	// ===== Basic Settings =====
 	// Agent mode: "quick-answer" for RAG mode, "smart-reasoning" for ReAct agent mode
 	AgentMode string `yaml:"agent_mode" json:"agent_mode"`
+	// AgentType is a preset category under smart-reasoning mode that pre-fills
+	// system prompt, allowed tools and recommended KB compatibility.
+	// Valid values: "rag-qa", "wiki-qa", "hybrid-rag-wiki", "custom".
+	// Empty / unknown values are treated as "custom" (no preset applied).
+	// Ignored for quick-answer mode.
+	AgentType string `yaml:"agent_type" json:"agent_type,omitempty"`
 	// System prompt for the agent (unified prompt, uses web_search_status placeholder for dynamic behavior)
 	SystemPrompt string `yaml:"system_prompt" json:"system_prompt"`
 	// SystemPromptID references a template ID in prompt_templates/ YAML files.
@@ -115,6 +146,9 @@ type CustomAgentConfig struct {
 	// When false, knowledge base retrieval happens according to KBSelectionMode
 	RetrieveKBOnlyWhenMentioned bool `yaml:"retrieve_kb_only_when_mentioned" json:"retrieve_kb_only_when_mentioned"`
 
+	// Whether to retain retrieval history across turns
+	RetainRetrievalHistory bool `yaml:"retain_retrieval_history" json:"retain_retrieval_history"`
+
 	// ===== Image Upload / Multimodal Settings =====
 	// Whether image upload is enabled for this agent (default: false)
 	ImageUploadEnabled bool `yaml:"image_upload_enabled" json:"image_upload_enabled"`
@@ -124,7 +158,7 @@ type CustomAgentConfig struct {
 	AudioUploadEnabled bool `yaml:"audio_upload_enabled" json:"audio_upload_enabled"`
 	// ASR model ID for audio transcription (optional)
 	ASRModelID string `yaml:"asr_model_id" json:"asr_model_id"`
-	// Storage provider for image uploads: "local", "minio", "cos", "tos"
+	// Storage provider for image uploads: "local", "minio", "cos", "tos", "s3", "oss", "ks3".
 	// Empty means use the global/tenant default provider.
 	ImageStorageProvider string `yaml:"image_storage_provider" json:"image_storage_provider"`
 
@@ -273,9 +307,9 @@ func (a *CustomAgent) IsAgentMode() bool {
 type SuggestedQuestion struct {
 	// 질문 텍스트
 	Question string `json:"question"`
-	// 출처 유형: "faq", "document", "agent_config"
+	// 출처 유형: "agent_config", "faq", "document", "wiki"
 	Source string `json:"source"`
-	// 출처 지식베이스 ID(faq/document 출처일 때만 값이 존재)
+	// 출처 지식베이스 ID(faq/document/wiki 출처일 때만 값이 존재)
 	KnowledgeBaseID string `json:"knowledge_base_id,omitempty"`
 }
 
@@ -284,10 +318,17 @@ type SuggestedQuestion struct {
 // rebuildRegistryFromConfig를 통해 채워집니다.
 var BuiltinAgentRegistry = map[string]func(uint64) *CustomAgent{}
 
-// builtinAgentIDsOrdered는 내장 에이전트의 고정 표시 순서를 정의합니다.
+// builtinAgentIDsOrdered는 사용자에게 노출되는 내장 에이전트의 고정 표시 순서를 정의합니다.
+//
+// 참고: BuiltinWikiFixerID는 의도적으로 제외합니다. wiki fixer는
+// Wiki 편집기에서 프로그램적으로 호출되는 내부 에이전트이므로
+// 테넌트 에이전트 선택 목록을 어지럽히지 않도록 숨깁니다.
+// 다만 YAML 엔트리가 BuiltinAgentRegistry에 등록되므로 GetAgentByID로는
+// 계속 사용할 수 있습니다.
 var builtinAgentIDsOrdered = []string{
 	BuiltinQuickAnswerID,
 	BuiltinSmartReasoningID,
+	BuiltinWikiResearcherID,
 	BuiltinDeepResearcherID,
 	BuiltinDataAnalystID,
 	BuiltinKnowledgeGraphExpertID,

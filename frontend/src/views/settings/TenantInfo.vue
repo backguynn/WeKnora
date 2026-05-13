@@ -161,7 +161,7 @@ const loadInfo = async () => {
     const userResponse = await getCurrentUser()
     
     if ((userResponse as any).success && userResponse.data) {
-      tenantInfo.value = userResponse.data.tenant
+      tenantInfo.value = userResponse.data.tenant ?? null
     } else {
       error.value = userResponse.message || t('tenant.messages.fetchFailed')
     }

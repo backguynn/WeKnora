@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -328,6 +329,22 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 
 	switch customAgent.Config.KBSelectionMode {
 	case "all":
+		// Authoritative capability filter for the runtime path. The frontend
+		// editor and @mention dropdown apply the same filter, but we don't
+		// trust the client here: a stale session payload or API caller could
+		// still ask us to retrieve against an incompatible KB and we'd rather
+		// just drop it (and log) than feed it to tools that would no-op.
+		capFilter := tools.DeriveKBFilterFromTools(customAgent.Config.AllowedTools)
+		accept := func(kb *types.KnowledgeBase) bool {
+			if kb == nil {
+				return false
+			}
+			if capFilter.IsEmpty() {
+				return true
+			}
+			return tools.KBSatisfiesToolRequirements(kb.Capabilities(), customAgent.Config.AllowedTools)
+		}
+
 		// Get own knowledge bases (uses ctx TenantID = agent's tenant)
 		allKBs, err := s.knowledgeBaseService.ListKnowledgeBases(ctx)
 		if err != nil {
@@ -335,7 +352,12 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		}
 		kbIDSet := make(map[string]bool)
 		kbIDs := make([]string, 0, len(allKBs))
+		ownSkipped := 0
 		for _, kb := range allKBs {
+			if !accept(kb) {
+				ownSkipped++
+				continue
+			}
 			kbIDs = append(kbIDs, kb.ID)
 			kbIDSet[kb.ID] = true
 		}
@@ -344,6 +366,7 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		// tenant's own KBs. Including the current user's shared KBs would leak
 		// unrelated KBs from other organisations into the agent's retrieval scope.
 		isSharedAgent := sessionTenantID != 0 && sessionTenantID != customAgent.TenantID
+		sharedSkipped := 0
 		if !isSharedAgent {
 			tenantID := types.MustTenantIDFromContext(ctx)
 			userIDVal := ctx.Value(types.UserIDContextKey)
@@ -354,10 +377,15 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 						logger.Warnf(ctx, "Failed to list shared knowledge bases: %v", err)
 					} else {
 						for _, info := range sharedList {
-							if info != nil && info.KnowledgeBase != nil && !kbIDSet[info.KnowledgeBase.ID] {
-								kbIDs = append(kbIDs, info.KnowledgeBase.ID)
-								kbIDSet[info.KnowledgeBase.ID] = true
+							if info == nil || info.KnowledgeBase == nil || kbIDSet[info.KnowledgeBase.ID] {
+								continue
 							}
+							if !accept(info.KnowledgeBase) {
+								sharedSkipped++
+								continue
+							}
+							kbIDs = append(kbIDs, info.KnowledgeBase.ID)
+							kbIDSet[info.KnowledgeBase.ID] = true
 						}
 					}
 				}
@@ -367,6 +395,11 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 				sessionTenantID, customAgent.TenantID)
 		}
 
+		if ownSkipped+sharedSkipped > 0 {
+			logger.Infof(ctx,
+				"KBSelectionMode=all: tool-capability filter removed %d own + %d shared KBs (agent=%s, tools=%v)",
+				ownSkipped, sharedSkipped, customAgent.ID, customAgent.Config.AllowedTools)
+		}
 		logger.Infof(ctx, "KBSelectionMode=all: loaded %d knowledge bases (own + shared)", len(kbIDs))
 		return kbIDs
 	case "selected":
@@ -707,11 +740,7 @@ func (s *sessionService) handleModelFallback(ctx context.Context, chatManage *ty
 	}
 
 	// Start streaming response
-	userMsg := chat.Message{Role: "user", Content: promptContent}
-	if chatManage.ChatModelSupportsVision && len(chatManage.Images) > 0 {
-		userMsg.Images = chatManage.Images
-	}
-	responseChan, err := chatModel.ChatStream(ctx, []chat.Message{userMsg}, opt)
+	responseChan, err := chatModel.ChatStream(ctx, buildFallbackMessages(chatManage, promptContent), opt)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to start streaming fallback response: %v, falling back to fixed response", err)
 		s.handleFixedFallback(ctx, chatManage)
@@ -728,15 +757,31 @@ func (s *sessionService) handleModelFallback(ctx context.Context, chatManage *ty
 	go s.consumeFallbackStream(ctx, chatManage, responseChan)
 }
 
+func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) []chat.Message {
+	messages := make([]chat.Message, 0, len(chatManage.History)*2+1)
+	messages = chatpipeline.AppendHistoryMessages(messages, chatManage.History)
+
+	userMsg := chat.Message{Role: "user", Content: promptContent}
+	if chatManage.ChatModelSupportsVision && len(chatManage.Images) > 0 {
+		userMsg.Images = chatManage.Images
+	}
+
+	return append(messages, userMsg)
+}
+
 // renderFallbackPrompt renders the fallback prompt template with query and image context.
 func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *types.ChatManage) (string, error) {
 	query := chatManage.Query
 	if rq := strings.TrimSpace(chatManage.RewriteQuery); rq != "" {
 		query = rq
 	}
+
+	kbDocuments := s.buildKBDocumentListing(ctx, chatManage)
+
 	result := types.RenderPromptPlaceholders(chatManage.FallbackPrompt, types.PlaceholderValues{
-		"query":    query,
-		"language": chatManage.Language,
+		"query":        query,
+		"language":     chatManage.Language,
+		"kb_documents": kbDocuments,
 	})
 
 	if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
@@ -746,6 +791,76 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 		result += "\n\n" + chatManage.QuotedContext
 	}
 	return result, nil
+}
+
+// buildKBDocumentListing returns a concise listing of documents in the knowledge bases
+// associated with the current pipeline. This gives the LLM visibility into KB contents
+// when vector/keyword search returns empty (e.g., broad browse queries).
+func (s *sessionService) buildKBDocumentListing(ctx context.Context, chatManage *types.ChatManage) string {
+	// Collect unique KB IDs from search targets
+	kbIDs := make(map[string]struct{})
+	for _, t := range chatManage.SearchTargets {
+		kbIDs[t.KnowledgeBaseID] = struct{}{}
+	}
+	for _, id := range chatManage.KnowledgeBaseIDs {
+		kbIDs[id] = struct{}{}
+	}
+	if len(kbIDs) == 0 {
+		return ""
+	}
+
+	const maxDocuments = 50
+	var b strings.Builder
+	total := 0
+
+	for kbID := range kbIDs {
+		if total >= maxDocuments {
+			break
+		}
+		knowledges, err := s.knowledgeService.ListKnowledgeByKnowledgeBaseID(ctx, kbID)
+		if err != nil {
+			logger.Warnf(ctx, "buildKBDocumentListing: failed to list knowledge for KB %s: %v", kbID, err)
+			continue
+		}
+		for _, k := range knowledges {
+			if total >= maxDocuments {
+				break
+			}
+			if k.EnableStatus != "enabled" {
+				continue
+			}
+			title := k.Title
+			if title == "" {
+				title = k.FileName
+			}
+			if title == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "- %s", title)
+			if k.FileType != "" {
+				fmt.Fprintf(&b, " (%s)", k.FileType)
+			}
+			if k.Description != "" {
+				desc := k.Description
+				if len([]rune(desc)) > 100 {
+					desc = string([]rune(desc)[:100]) + "..."
+				}
+				fmt.Fprintf(&b, ": %s", desc)
+			}
+			b.WriteString("\n")
+			total++
+		}
+	}
+
+	if b.Len() == 0 {
+		return ""
+	}
+
+	if total >= maxDocuments {
+		fmt.Fprintf(&b, "... (showing first %d documents)\n", maxDocuments)
+	}
+
+	return b.String()
 }
 
 // consumeFallbackStream consumes the streaming response and emits events
@@ -855,8 +970,8 @@ func (s *sessionService) resolveWebSearchMaxResults(ctx context.Context, req *ty
 		return req.CustomAgent.Config.WebSearchMaxResults
 	}
 	tenantInfo, _ := types.TenantInfoFromContext(ctx)
-	if tenantInfo != nil && tenantInfo.WebSearchConfig != nil && tenantInfo.WebSearchConfig.MaxResults > 0 {
-		return tenantInfo.WebSearchConfig.MaxResults
+	if tenantInfo != nil {
+		return types.EffectiveWebSearchConfig(tenantInfo.WebSearchConfig).MaxResults
 	}
-	return 10
+	return types.DefaultWebSearchMaxResults
 }

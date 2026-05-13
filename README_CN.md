@@ -18,11 +18,17 @@
     <a href="https://chatbot.weixin.qq.com" target="_blank">
         <img alt="微信对话开放平台" src="https://img.shields.io/badge/微信对话开放平台-5ac725">
     </a>
+    <a href="https://chromewebstore.google.com/detail/jpemjbopikggjlmikmclgbmkhhopjdgd" target="_blank">
+        <img alt="Chrome 插件" src="https://img.shields.io/badge/Chrome 插件-WeKnora-4285F4">
+    </a>
+    <a href="https://clawhub.ai/lyingbug/weknora" target="_blank">
+        <img alt="ClawHub Skill" src="https://img.shields.io/badge/ClawHub Skill-WeKnora-ff6b35">
+    </a>
     <a href="https://github.com/Tencent/WeKnora/blob/main/LICENSE">
         <img src="https://img.shields.io/badge/License-MIT-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="License">
     </a>
     <a href="./CHANGELOG.md">
-        <img alt="版本" src="https://img.shields.io/badge/version-0.4.0-2e6cc4?labelColor=d4eaf7">
+        <img alt="版本" src="https://img.shields.io/badge/version-0.5.1-2e6cc4?labelColor=d4eaf7">
     </a>
 </p>
 
@@ -38,17 +44,32 @@
   </h4>
 </p>
 
-# 💡 WeKnora - 基于大模型的文档理解检索框架
+# 💡 WeKnora — 让文档活起来：RAG、Agent 推理与自动 Wiki 一体化的知识框架
 
 ## 📌 项目介绍
 
-**[WeKnora（维娜拉）](https://weknora.weixin.qq.com)** 是一款基于大语言模型（LLM）的智能知识管理与问答框架，专为企业级文档理解与语义检索场景打造。
+**[WeKnora（维娜拉）](https://weknora.weixin.qq.com)** 是一款开源的、基于大语言模型（LLM）的知识管理框架，专为企业级文档理解、语义检索与智能推理场景打造。
 
-WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问答基于 **RAG（Retrieval-Augmented Generation）** 流水线，快速召回相关片段并生成回答，适合日常知识查询。智能推理基于 **ReACT Agent** 引擎，采用**渐进式策略**自主编排知识检索、MCP 工具和网络搜索，经过多轮迭代与反思逐步推导最终结论，适合多源信息整合与复杂任务。同时支持自定义智能体，灵活配置专属的知识库、工具集与系统提示词。两种模式按需选用，兼顾响应速度与推理深度。
+框架围绕三大核心能力构建：**RAG 快速问答**适合日常知识查询，**ReAct Agent 智能推理**自主编排知识检索、MCP 工具与网络搜索完成复杂多步任务，全新的 **Wiki 模式**则让 Agent 从原始文档中自治生成相互链接的 Markdown 知识库与可视化知识图谱。结合多源数据接入（飞书 / Notion / 语雀，更多持续接入中）、二十余家主流模型厂商集成、Langfuse 全链路可观测性，以及完全可私有化部署的模块化架构，WeKnora 帮助团队把分散文档沉淀为可查询、可推理、可持续演进的专属知识资产。
 
-框架支持从飞书等外部平台自动同步知识（更多数据源持续接入中），覆盖 PDF、Word、图片、Excel 等十余种文档格式，并可通过企业微信、飞书、Slack、Telegram 等 IM 频道直接提供问答服务。模型层面兼容 OpenAI、DeepSeek、Qwen（阿里云）、智谱、混元、Gemini、MiniMax、NVIDIA、Ollama 等主流厂商。全流程模块化设计，大模型、向量数据库、存储等组件均可灵活替换，支持本地与私有云部署，数据完全自主可控。
+框架支持从飞书、Notion 及语雀等外部平台自动同步知识（更多数据源持续接入中），覆盖 PDF、Word、图片、Excel 等十余种文档格式，并可通过企业微信、飞书、Slack、Telegram 等 IM 频道直接提供问答服务。模型层面兼容 OpenAI、DeepSeek、Qwen（阿里云）、智谱、混元、Gemini、MiniMax、NVIDIA、Ollama 等主流厂商。全流程模块化设计，大模型、向量数据库、存储等组件均可灵活替换，支持本地与私有云部署，数据完全自主可控。WeKnora 还无缝集成了 **Langfuse**，为 Agent 运行、Token 使用及任务流水线提供了全面的可观测性追踪。
 
 ## ✨ 最新更新
+
+**v0.5.1 版本亮点：**
+
+- **Wiki 模式**：全新推出 Agent 驱动的 Wiki 知识体系，可从原始文档中自动梳理并生成相互关联的 Markdown 页面，内置独立的 Wiki 浏览器与可视化知识图谱，直观呈现页面之间的引用与关联关系，帮助团队沉淀结构化、可迭代演进的专属知识库。
+- **可观测性**：集成 Langfuse，深入跟踪 Agent ReAct 循环、LLM Token 消耗、工具调用以及 asynq 任务流水线，全面掌控 Agent 推理与系统性能。
+- **自定义索引策略**：在知识库级别独立开启或关闭 向量检索、关键词检索（混合检索）、Wiki 模式 以及 知识图谱 构建。
+- **向量数据库 UI 与知识库绑定**：新增前端 Vector Store 管理界面与连通性测试，并支持为不同知识库绑定专属的向量数据库实例。
+- **语雀数据源**：新增语雀连接器，支持文档的全量与增量同步，实现语雀知识的无缝接入。
+- **微信小程序**：新增轻量级微信小程序客户端（位于 `miniprogram/`），可在手机端配置 WeKnora API、选择知识库、导入网页 URL 并直接在微信中进行知识对话。
+- **知识库列表视图与批量操作**：文档管理新增列表视图（与卡片视图并存），支持多选、悬浮批量操作栏与批量删除，大幅简化大规模知识库的整理工作。
+- **会话与 IM 流程优化**：用户菜单新增租户维度的 IM 频道总览、对话列表新增关键词搜索与按用户维度置顶，IM 频道发起的会话也明确标注了来源。
+- **重要修复**：修复 LaTeX 公式在流式输出过程中闪现并消失的问题（#1056）、移除 DOCX 解析默认 100 页限制、去掉会打断多轮 IM Agent 推理的流水线级超时、IM 会话按 Agent 隔离、加固 Wiki 入库流程（异常 JSON 不再静默丢数据、失败操作自动重入队），并让加密字段解密失败时显式报错而非返回空数据。
+
+<details>
+<summary><b>更早版本</b></summary>
 
 **v0.4.0 版本亮点：**
 
@@ -65,8 +86,6 @@ WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问�
 - **VectorStore 管理**：完整的 VectorStore CRUD 功能，包含实体、仓库、服务层、连通性测试和 API 端点
 - **重要修复**：修复 Azure OpenAI 端点处理、Embedding 截断、IM 引用标签清理、neo4j Go 1.24 Windows 兼容性及 OSS 签名问题
 
-<details>
-<summary><b>更早版本</b></summary>
 
 **v0.3.6 版本亮点：**
 
@@ -159,6 +178,25 @@ WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问�
 </details>
 
 
+## 📱 功能展示
+
+<table>
+  <tr>
+    <td colspan="2" align="center"><b>💬 智能问答对话</b><br/><img src="./docs/images/qa.png" alt="智能问答对话" width="100%"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><b>📖 Wiki 浏览器</b><br/><img src="./docs/images/wiki-browser.png" alt="Wiki 浏览器" width="100%"></td>
+    <td width="50%" align="center"><b>🕸️ Wiki 知识图谱</b><br/><img src="./docs/images/wiki-graph.png" alt="Wiki 知识图谱" width="100%"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><b>🤖 Agent 模式 · 工具调用过程</b><br/><img src="./docs/images/agent-qa.png" alt="Agent 模式工具调用过程" width="100%"></td>
+    <td width="50%" align="center"><b>⚙️ 对话设置</b><br/><img src="./docs/images/settings.png" alt="对话设置" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><b>🔭 监控可观测性 · Langfuse Tracing</b><br/><img src="./docs/images/langfuse.png" alt="Langfuse Tracing" width="100%"></td>
+  </tr>
+</table>
+
 ## 🏗️ 架构设计
 
 ![weknora-architecture.png](./docs/images/architecture.png)
@@ -167,27 +205,28 @@ WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问�
 
 ## 🧩 功能概览
 
-**🤖 智能对话**
+**智能对话**
 
 | 能力 | 详情 |
 |------|------|
 | 智能推理 | ReACT 渐进式多步推理，自主编排知识检索、MCP 工具与网络搜索，支持自定义智能体 |
 | 快速问答 | 基于知识库的 RAG 问答，快速准确地回答问题 |
+| Wiki 模式 | Agent 驱动从原始文档中自动生成并维护结构化、相互链接的 Markdown Wiki 知识页面 |
 | 工具调用 | 内置工具、MCP 工具、网络搜索 |
 | 对话策略 | 在线 Prompt 编辑、检索阈值调节、多轮上下文感知 |
 | 推荐问题 | 基于知识库内容自动生成推荐问题 |
 
-**📚 知识管理**
+**知识管理**
 
 | 能力 | 详情 |
 |------|------|
-| 知识库类型 | FAQ / 文档，支持文件夹导入、URL 导入、标签管理、在线录入 |
-| 数据源导入 | 飞书 / Notion 知识库自动同步（更多数据源开发中），支持增量与全量同步 |
+| 知识库类型 | FAQ / 文档 / Wiki，支持文件夹导入、URL 导入、标签管理、在线录入 |
+| 数据源导入 | 飞书 / Notion / 语雀 知识库自动同步（更多数据源开发中），支持增量与全量同步 |
 | 文档格式 | PDF / Word / Txt / Markdown / HTML / 图片 / CSV / Excel / PPT / JSON |
 | 检索策略 | BM25 稀疏召回 / Dense 稠密召回 / GraphRAG 图谱增强 / 父子分块 / 多维度索引 |
 | 端到端测试 | 检索+生成全链路可视化，评估召回命中率、BLEU / ROUGE 等指标 |
 
-**🔌 集成与扩展**
+**集成与扩展**
 
 | 能力 | 详情 |
 |------|------|
@@ -198,18 +237,24 @@ WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问�
 | 网络搜索 | DuckDuckGo / Bing / Google / Tavily / Baidu / Ollama |
 
 
-**🛡️ 平台能力**
+**平台能力**
 
 | 能力 | 详情 |
 |------|------|
 | 部署 | 本地 / Docker / Kubernetes (Helm)，支持私有化离线部署 |
-| 界面 | Web UI / RESTful API / Chrome Extension|
+| 界面 | Web UI / RESTful API / Chrome Extension / 微信小程序 |
+| 可观测性 | 集成 Langfuse 以追踪 ReAct 循环、Token 消耗、工具调用和任务流水线 |
 | 任务管理 | MQ 异步任务，版本升级自动数据库迁移 |
 | 模型管理 | 集中配置，知识库级别模型选择，多租户共享内置模型，WeKnora Cloud 托管模型与文档解析 |
 
 ## 🧩 Chrome 插件
 
 [**WeKnora Chrome 插件**](https://chromewebstore.google.com/detail/jpemjbopikggjlmikmclgbmkhhopjdgd)支持在浏览器中直接将网页内容采集到 WeKnora 知识库。选中文本、图片或整个页面，一键保存为知识条目，无需复制粘贴或手动上传文件。
+
+
+## 📱 微信小程序
+
+[**WeKnora 微信小程序**](./miniprogram/README.md) 提供轻量移动端客户端，支持配置 WeKnora API、选择知识库、导入 URL，并在微信内向知识库提问。
 
 
 ## 🦞 ClawHub Skill
@@ -219,7 +264,6 @@ WeKnora 提供**快速问答**与**智能推理**两种问答模式。快速问�
 - **文档导入** — 通过 Agent 上传文件、导入网页或写入 Markdown 知识
 - **混合检索** — 在单个或多个知识库中进行向量 + 关键词混合搜索
 - **知识管理** — 以编程方式浏览、编辑和删除知识条目
-
 
 ## 🚀 快速开始
 
@@ -251,7 +295,7 @@ docker compose up -d   # 启动核心服务
 | `full` | 全部功能 | `docker compose --profile full up -d` |
 | `neo4j` | 知识图谱 (Neo4j) | `docker compose --profile neo4j up -d` |
 | `minio` | 对象存储 (MinIO) | `docker compose --profile minio up -d` |
-| `jaeger` | 链路追踪 (Jaeger) | `docker compose --profile jaeger up -d` |
+| `langfuse` | 链路追踪 (Langfuse) | `docker compose --profile langfuse up -d` |
 
 组合示例：`docker compose --profile neo4j --profile minio up -d`
 
@@ -263,24 +307,7 @@ docker compose up -d   # 启动核心服务
 |------|------|
 | Web UI | `http://localhost` |
 | 后端 API | `http://localhost:8080` |
-| 链路追踪 (Jaeger) | `http://localhost:16686` |
-
-## 📱 功能展示
-
-<table>
-  <tr>
-    <td colspan="2"><b>智能问答对话</b><br/><img src="./docs/images/qa.png" alt="智能问答对话"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><b>Agent模式工具调用过程</b><br/><img src="./docs/images/agent-qa.png" alt="Agent模式工具调用过程"></td>
-  </tr>
-  <tr>
-    <td><b>知识库管理</b><br/><img src="./docs/images/knowledgebases.png" alt="知识库管理"></td>
-    <td><b>对话设置</b><br/><img src="./docs/images/settings.png" alt="对话设置"></td>
-  </tr>
-</table>
-
-
+| 链路追踪 (Langfuse) | `http://localhost:3000` |
 
 ## 文档知识图谱
 
@@ -389,4 +416,3 @@ WeKnora/
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Tencent/WeKnora&type=date&legend=top-left" />
  </picture>
 </a>
-

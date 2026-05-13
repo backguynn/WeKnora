@@ -3486,7 +3486,7 @@ watch(() => entries.value.map(e => ({
       color: var(--td-text-color-primary);
       cursor: pointer;
       transition: all 0.2s ease;
-      font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: var(--app-font-family);
       font-size: 13px;
       -webkit-font-smoothing: antialiased;
 
@@ -3509,7 +3509,7 @@ watch(() => entries.value.map(e => ({
         }
 
         .tag-hash-icon {
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-family: var(--app-font-family-mono);
           font-size: 16px;
           font-weight: 500;
           width: 16px;
@@ -3524,7 +3524,7 @@ watch(() => entries.value.map(e => ({
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-family: "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: var(--app-font-family);
         font-size: 13px;
         font-weight: 400;
         line-height: 1.4;
@@ -3785,7 +3785,7 @@ watch(() => entries.value.map(e => ({
   cursor: pointer;
   transition: all 0.2s ease;
   color: var(--td-text-color-primary);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 400;
 
@@ -3923,7 +3923,7 @@ watch(() => entries.value.map(e => ({
   h2 {
     margin: 0;
     color: var(--td-text-color-primary);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 24px;
     font-weight: 600;
     line-height: 32px;
@@ -3932,7 +3932,7 @@ watch(() => entries.value.map(e => ({
   .faq-subtitle {
     margin: 0;
     color: var(--td-text-color-placeholder);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
@@ -4089,7 +4089,7 @@ watch(() => entries.value.map(e => ({
       }
 
       .result-title {
-        font-family: "PingFang SC";
+        font-family: var(--app-font-family);
         font-weight: 600;
         font-size: 14px;
         color: var(--td-text-color-primary);
@@ -4102,7 +4102,7 @@ watch(() => entries.value.map(e => ({
       gap: 12px;
 
       .result-time {
-        font-family: "PingFang SC";
+        font-family: var(--app-font-family);
         font-size: 13px;
         color: var(--td-text-color-secondary);
       }
@@ -4139,7 +4139,7 @@ watch(() => entries.value.map(e => ({
       display: flex;
       align-items: center;
       gap: 6px;
-      font-family: "PingFang SC";
+      font-family: var(--app-font-family);
       font-size: 13px;
 
       .stat-label {
@@ -4386,7 +4386,7 @@ watch(() => entries.value.map(e => ({
   border: 1px solid var(--td-component-stroke);
   font-size: 11px;
   color: var(--td-text-color-secondary);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
 
   .status-icon {
     font-size: 13px;
@@ -4455,7 +4455,7 @@ watch(() => entries.value.map(e => ({
     background: var(--td-bg-color-container-hover);
     font-size: 11px;
     font-weight: 400;
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     transition: all 0.2s ease;
 
     &:hover {
@@ -4513,7 +4513,7 @@ watch(() => entries.value.map(e => ({
 .faq-question {
   flex: 1;
   color: var(--td-text-color-primary);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.5;
@@ -4545,7 +4545,7 @@ watch(() => entries.value.map(e => ({
 
   .faq-section-label {
     color: var(--td-text-color-secondary);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -4636,7 +4636,7 @@ watch(() => entries.value.map(e => ({
   max-width: 100%;
   min-width: 0;
   border-radius: 5px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   flex: 0 1 auto;
   
   :deep(.t-tag) {
@@ -4685,7 +4685,7 @@ watch(() => entries.value.map(e => ({
   font-size: 12px;
   font-style: italic;
   padding: 8px 0;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
 }
 
 
@@ -4697,7 +4697,7 @@ watch(() => entries.value.map(e => ({
   padding: 24px 16px;
   color: var(--td-text-color-secondary);
   font-size: 13px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
 }
 
 .faq-no-more {
@@ -4729,7 +4729,7 @@ watch(() => entries.value.map(e => ({
 
   .empty-text {
     color: var(--td-text-color-primary);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 18px;
     font-weight: 600;
     line-height: 28px;
@@ -4737,7 +4737,7 @@ watch(() => entries.value.map(e => ({
 
   .empty-desc {
     color: var(--td-text-color-secondary);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 14px;
     font-weight: 400;
     line-height: 22px;
@@ -4807,7 +4807,7 @@ watch(() => entries.value.map(e => ({
 
   .import-title {
     margin: 0;
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 18px;
     font-weight: 600;
     color: var(--td-text-color-primary);
@@ -4875,7 +4875,7 @@ watch(() => entries.value.map(e => ({
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 13px;
   font-weight: 500;
   padding: 6px 14px;
@@ -4906,7 +4906,7 @@ watch(() => entries.value.map(e => ({
 .import-form-label {
   display: block;
   margin-bottom: 0;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   color: var(--td-text-color-primary);
@@ -4918,40 +4918,6 @@ watch(() => entries.value.map(e => ({
     color: var(--td-error-color);
     margin-left: 4px;
     font-weight: 600;
-  }
-}
-
-// 单选按钮组样式 - 符合项目主题风格
-:deep(.import-radio-group) {
-  .t-radio-group--filled {
-    background: var(--td-bg-color-secondarycontainer);
-    border-radius: 6px;
-    padding: 2px;
-  }
-  
-  .t-radio-button {
-    font-family: "PingFang SC";
-    font-size: 14px;
-    border-color: var(--td-component-stroke);
-    transition: all 0.2s ease;
-
-    &:hover:not(.t-is-disabled) {
-      border-color: var(--td-brand-color);
-      color: var(--td-brand-color);
-    }
-
-    &.t-is-checked {
-      background: var(--td-brand-color);
-      border-color: var(--td-brand-color);
-      color: var(--td-text-color-anti);
-      font-weight: 500;
-
-      &:hover:not(.t-is-disabled) {
-        background: var(--td-brand-color);
-        border-color: var(--td-brand-color-active);
-        color: var(--td-text-color-anti);
-      }
-    }
   }
 }
 
@@ -5021,20 +4987,20 @@ watch(() => entries.value.map(e => ({
 }
 
 .upload-primary-text {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   color: var(--td-text-color-primary);
 }
 
 .upload-secondary-text {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 12px;
   color: var(--td-text-color-secondary);
 }
 
 .upload-file-name {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   color: var(--td-brand-color);
@@ -5044,7 +5010,7 @@ watch(() => entries.value.map(e => ({
 // 导入表单提示
 .import-form-tip {
   margin-top: 8px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 12px;
   color: var(--td-text-color-disabled);
   line-height: 18px;
@@ -5074,7 +5040,7 @@ watch(() => entries.value.map(e => ({
 }
 
 .preview-title {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   color: var(--td-text-color-primary);
@@ -5113,14 +5079,14 @@ watch(() => entries.value.map(e => ({
   background: linear-gradient(135deg, var(--td-brand-color) 0%, var(--td-brand-color-active) 100%);
   color: var(--td-text-color-anti);
   border-radius: 4px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 12px;
   font-weight: 600;
 }
 
 .preview-question {
   flex: 1;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 13px;
   color: var(--td-text-color-primary);
   line-height: 1.5;
@@ -5131,7 +5097,7 @@ watch(() => entries.value.map(e => ({
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--td-component-stroke);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 12px;
   color: var(--td-text-color-secondary);
   text-align: center;
@@ -5154,7 +5120,7 @@ watch(() => entries.value.map(e => ({
   .t-drawer__header {
     padding: 20px 24px;
     border-bottom: 1px solid var(--td-component-stroke);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 18px;
     font-weight: 600;
     color: var(--td-text-color-primary);
@@ -5235,7 +5201,7 @@ watch(() => entries.value.map(e => ({
     height: 32px;
     min-width: 32px;
     padding: 0;
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     transition: all 0.2s ease;
     border-radius: 8px;
   }
@@ -5286,7 +5252,7 @@ watch(() => entries.value.map(e => ({
 .item-count {
   font-size: 13px;
   color: var(--td-text-color-secondary);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-weight: 500;
   text-align: right;
   padding-right: 40px;
@@ -5342,7 +5308,7 @@ watch(() => entries.value.map(e => ({
     font-size: 14px;
     line-height: 1.6;
     color: var(--td-text-color-primary);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     white-space: pre-wrap;
     word-break: break-word;
     padding: 0;
@@ -5388,7 +5354,7 @@ watch(() => entries.value.map(e => ({
   margin-top: 6px;
   font-size: 12px;
   color: var(--td-text-color-disabled);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
 }
 
 // FAQ编辑器表单样式 - 完全参考设置页面
@@ -5613,7 +5579,7 @@ watch(() => entries.value.map(e => ({
 
 // Input 组件样式 - 与登录页面一致
 :deep(.t-input) {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   border: 1px solid var(--td-component-stroke);
   border-radius: 8px;
@@ -5635,7 +5601,7 @@ watch(() => entries.value.map(e => ({
     outline: none !important;
     background: transparent;
     font-size: 14px;
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     padding: 6px 12px;
     color: var(--td-text-color-primary);
 
@@ -5658,7 +5624,7 @@ watch(() => entries.value.map(e => ({
 
 // Textarea 组件样式
 :deep(.t-textarea) {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   border: 1px solid var(--td-component-stroke);
   border-radius: 8px;
@@ -5680,7 +5646,7 @@ watch(() => entries.value.map(e => ({
     outline: none !important;
     background: transparent;
     font-size: 14px;
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     line-height: 1.6;
     resize: vertical;
     padding: 6px 12px;
@@ -5695,16 +5661,6 @@ watch(() => entries.value.map(e => ({
     &::placeholder {
       color: var(--td-text-color-placeholder);
     }
-  }
-}
-
-:deep(.t-button--theme-primary) {
-  background-color: var(--td-brand-color);
-  border-color: var(--td-brand-color);
-  
-  &:hover {
-    background-color: var(--td-brand-color-active);
-    border-color: var(--td-brand-color-active);
   }
 }
 
@@ -5759,7 +5715,7 @@ watch(() => entries.value.map(e => ({
   .t-drawer__header {
     padding: 20px 24px;
     border-bottom: 1px solid var(--td-component-stroke);
-    font-family: "PingFang SC";
+    font-family: var(--app-font-family);
     font-size: 18px;
     font-weight: 600;
     color: var(--td-text-color-primary);
@@ -5867,38 +5823,13 @@ watch(() => entries.value.map(e => ({
 :deep(.slider-wrapper .t-slider) {
   flex: 1;
   min-width: 0;
-
-  .t-slider__rail {
-    background: var(--td-bg-color-secondarycontainer);
-    height: 4px;
-    border-radius: 2px;
-  }
-
-  .t-slider__track {
-    background: var(--td-brand-color);
-    height: 4px;
-    border-radius: 2px;
-  }
-
-  .t-slider__button {
-    width: 16px;
-    height: 16px;
-    border: 2px solid var(--td-brand-color);
-    background: var(--td-bg-color-container);
-    box-shadow: var(--td-shadow-1);
-
-    &:hover {
-      border-color: var(--td-brand-color-active);
-      box-shadow: 0 2px 8px rgba(7, 192, 95, 0.2);
-    }
-  }
 }
 
 .slider-value {
   flex-shrink: 0;
   min-width: 50px;
   text-align: right;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   color: var(--td-text-color-primary);
@@ -5910,7 +5841,7 @@ watch(() => entries.value.map(e => ({
 .search-button {
   height: 36px;
   border-radius: 8px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -5942,7 +5873,7 @@ watch(() => entries.value.map(e => ({
   margin-left: 0;
   margin-right: 0;
   padding-left: 0;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 600;
   color: var(--td-text-color-primary);
@@ -5960,7 +5891,7 @@ watch(() => entries.value.map(e => ({
   justify-content: center;
   padding: 48px 16px;
   color: var(--td-text-color-secondary);
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   text-align: center;
   background: var(--td-bg-color-container);
@@ -6037,7 +5968,7 @@ watch(() => entries.value.map(e => ({
 }
 
 .result-question {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 14px;
   font-weight: 600;
   color: var(--td-text-color-primary);
@@ -6102,7 +6033,7 @@ watch(() => entries.value.map(e => ({
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 6px;
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
 }
 
 .result-body {
@@ -6285,7 +6216,7 @@ watch(() => entries.value.map(e => ({
 }
 
 .section-label {
-  font-family: "PingFang SC";
+  font-family: var(--app-font-family);
   font-size: 12px;
   font-weight: 600;
   color: var(--td-text-color-secondary);

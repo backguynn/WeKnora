@@ -3,6 +3,7 @@
 package types
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -34,6 +35,8 @@ const (
 	ChunkTypeTableSummary ChunkType = "table_summary"
 	// ChunkTypeTableColumn 表示数据表列描述的 Chunk
 	ChunkTypeTableColumn ChunkType = "table_column"
+	// ChunkTypeWikiPage 表示 Wiki 页面同步的 Chunk，用于将 wiki 页面接入现有检索管线
+	ChunkTypeWikiPage ChunkType = "wiki_page"
 )
 
 // ChunkStatus 定义了不同状态的 Chunk
@@ -161,6 +164,27 @@ type Chunk struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	// Soft delete marker, supports data recovery
 	DeletedAt gorm.DeletedAt `json:"deleted_at"               gorm:"index"`
+	// ContextHeader is an in-memory-only context string (e.g. a Markdown
+	// heading breadcrumb) that the indexing pipeline prepends to Content
+	// when generating embeddings. NOT persisted — populated by the chunker
+	// during initial splitting and discarded after indexing.
+	ContextHeader string `json:"-" gorm:"-"`
+}
+
+// EmbeddingContent returns the chunk content with ContextHeader prepended
+// when set. Use this where the embedding model needs section context that
+// isn't part of the literal Content. Surrounding whitespace on Content is
+// trimmed so leading/trailing newlines from boundary slicing don't dilute
+// the embedded vector.
+func (c *Chunk) EmbeddingContent() string {
+	if c == nil {
+		return ""
+	}
+	body := strings.TrimSpace(c.Content)
+	if c.ContextHeader == "" {
+		return body
+	}
+	return c.ContextHeader + "\n\n" + body
 }
 
 // AssignChunkSeqIDs assigns sequential SeqIDs to a batch of chunks that have SeqID == 0.

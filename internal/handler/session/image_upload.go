@@ -82,7 +82,7 @@ func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAtt
 			logger.Warnf(ctx, "Failed to decode image %d for VLM analysis: %v", i, decErr)
 			continue
 		}
-		prompt := buildImageAnalysisPrompt(userQuery)
+		prompt := buildImageAnalysisPrompt(ctx, userQuery)
 		analysis, analysisErr := vlmModel.Predict(ctx, [][]byte{imgBytes}, prompt)
 		if analysisErr != nil {
 			logger.Warnf(ctx, "VLM analysis failed for image %d: %v", i, analysisErr)
@@ -95,16 +95,21 @@ func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAtt
 // buildImageAnalysisPrompt generates a context-aware VLM prompt based on the
 // user's question. Instead of doing generic OCR + Caption separately, we do a
 // single analysis call that is tailored to the user's intent.
-func buildImageAnalysisPrompt(userQuery string) string {
+
+func buildImageAnalysisPrompt(ctx context.Context, userQuery string) string {
+	language := types.LanguageNameFromContext(ctx)
 	if strings.TrimSpace(userQuery) == "" {
-		return "请分析这张图片的内容。如果包含文字，请提取关键文字信息；如果是自然图片，请描述其主要内容。用简洁的中文回答。"
+		return fmt.Sprintf(
+			"Analyze this image. If it contains text, extract the key text information. If it is a natural image, describe the main content. Respond concisely in %s.",
+			language,
+		)
 	}
 	return fmt.Sprintf(
-		"用户的问题是：%s\n\n请分析图片中与用户问题相关的内容。"+
-			"如果图片包含文字/文档/表格，请提取与问题相关的关键信息。"+
-			"如果是自然图片/截图/图表，请描述与问题相关的视觉内容。"+
-			"用简洁的中文回答，只输出分析结果。",
-		userQuery,
+		"The user's question is: %s\n\nAnalyze the parts of the image that are relevant to the user's question."+
+			"If the image contains text, a document, or a table, extract the key information relevant to the question."+
+			"If it is a natural image, screenshot, or chart, describe the visual content relevant to the question."+
+			"Respond concisely in %s and output only the analysis result.",
+		userQuery, language,
 	)
 }
 

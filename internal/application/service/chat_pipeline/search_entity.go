@@ -10,6 +10,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
+const graphEntityCandidateScore = 0.35
+
 // PluginSearch implements search functionality for chat pipeline
 type PluginSearchEntity struct {
 	graphRepo     interfaces.RetrieveGraphRepository
@@ -217,7 +219,7 @@ func chunk2SearchResult(chunk *types.Chunk, knowledge *types.Knowledge) *types.S
 		StartAt:           chunk.StartAt,
 		EndAt:             chunk.EndAt,
 		Seq:               chunk.ChunkIndex,
-		Score:             1.0,
+		Score:             graphEntityCandidateScore,
 		MatchType:         types.MatchTypeGraph,
 		Metadata:          knowledge.GetMetadata(),
 		ChunkType:         string(chunk.ChunkType),
