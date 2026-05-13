@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -440,8 +441,12 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	if model, err := s.modelService.GetModelByID(ctx, modelID); err != nil {
 		logger.Warnf(ctx, "Failed to load title generation model metadata for %s, using default temperature: %v", modelID, err)
 	} else if model != nil {
-		switch model.Source {
-		case types.ModelSourceOpenAI, types.ModelSourceAzureOpenAI:
+		providerName := provider.ProviderName(model.Parameters.Provider)
+		if providerName == "" {
+			providerName = provider.DetectProvider(model.Parameters.BaseURL)
+		}
+		switch providerName {
+		case provider.ProviderOpenAI, provider.ProviderAzureOpenAI:
 			temperature = 0
 		}
 	}
