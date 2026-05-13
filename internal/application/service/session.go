@@ -436,6 +436,15 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		})
 		return "", err
 	}
+	temperature := 0.3
+	if model, err := s.modelService.GetModelByID(ctx, modelID); err != nil {
+		logger.Warnf(ctx, "Failed to load title generation model metadata for %s, using default temperature: %v", modelID, err)
+	} else if model != nil {
+		switch model.Source {
+		case types.ModelSourceOpenAI, types.ModelSourceAzureOpenAI:
+			temperature = 0
+		}
+	}
 
 	// Prepare messages for title generation
 	titlePrompt := types.RenderPromptPlaceholders(s.cfg.Conversation.GenerateSessionTitlePrompt, types.PlaceholderValues{
@@ -452,7 +461,7 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	// Call model to generate title
 	thinking := false
 	response, err := chatModel.Chat(ctx, chatMessages, &chat.ChatOptions{
-		Temperature: 0.3,
+		Temperature: temperature,
 		Thinking:    &thinking,
 	})
 	if err != nil {
