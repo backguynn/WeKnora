@@ -34,10 +34,10 @@ type qaRequestContext struct {
 	webSearchEnabled  bool
 	enableMemory      bool // Whether memory feature is enabled
 	mentionedItems    types.MentionedItems
-	effectiveTenantID uint64            // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
-	images            []ImageAttachment // Uploaded images with analysis text
-	userMessageID     string            // Created user message ID (populated after createUserMessage)
-	channel           string            // Source channel: "web", "api", "im", etc.
+	effectiveTenantID uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
+	images            []ImageAttachment        // Uploaded images with analysis text
+	userMessageID     string                   // Created user message ID (populated after createUserMessage)
+	channel           string                   // Source channel: "web", "api", "im", etc.
 	attachments       types.MessageAttachments // Processed file attachments
 }
 
@@ -501,13 +501,14 @@ func (h *Handler) AgentQA(c *gin.Context) {
 		logger.Infof(reqCtx.ctx, "Agent mode determined by custom agent: %v (config.agent_mode=%s)",
 			agentModeEnabled, reqCtx.customAgent.Config.AgentMode)
 	}
+	generateTitle := !request.DisableTitle
 
 	// Route to appropriate handler based on agent mode
 	if agentModeEnabled {
-		h.executeQA(reqCtx, qaModeAgent, true)
+		h.executeQA(reqCtx, qaModeAgent, generateTitle)
 	} else {
 		logger.Infof(reqCtx.ctx, "Agent mode disabled, delegating to normal mode for session: %s", reqCtx.sessionID)
-		h.executeQA(reqCtx, qaModeNormal, false)
+		h.executeQA(reqCtx, qaModeNormal, generateTitle)
 	}
 }
 
