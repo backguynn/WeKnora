@@ -76,6 +76,12 @@ func (s *sessionService) resolveChatModelID(
 	return s.selectChatModelID(ctx, session, knowledgeBaseIDs, knowledgeIDs)
 }
 
+// ResolveQAChatModelID resolves the effective chat model using the same logic as QA execution.
+func (s *sessionService) ResolveQAChatModelID(ctx context.Context, req *types.QARequest) (string, error) {
+	knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
+	return s.resolveChatModelID(ctx, req, knowledgeBaseIDs, knowledgeIDs)
+}
+
 // resolveRetrievalTenantID determines the tenant ID to use for retrieval scope.
 // Priority: agent's tenant > context tenant > session tenant.
 func (s *sessionService) resolveRetrievalTenantID(
